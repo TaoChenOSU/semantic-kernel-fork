@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.SemanticKernel.AI.OpenAI.Clients;
 using Microsoft.SemanticKernel.Diagnostics;
 using Microsoft.SemanticKernel.Orchestration;
 using Microsoft.SemanticKernel.SemanticFunctions;
@@ -30,6 +31,7 @@ public static class InlineFunctionsDefinitionExtension
     /// <param name="presencePenalty">Presence Penalty parameter passed to LLM</param>
     /// <param name="frequencyPenalty">Frequency Penalty parameter passed to LLM</param>
     /// <param name="stopSequences">Strings the LLM will detect to stop generating (before reaching max tokens)</param>
+    /// <param name="httpTimeoutInSeconds">Number of seconds to wait before the request from the function to the backend times out</param>
     /// <returns>A function ready to use</returns>
     public static ISKFunction CreateSemanticFunction(
         this IKernel kernel,
@@ -42,7 +44,8 @@ public static class InlineFunctionsDefinitionExtension
         double topP = 0,
         double presencePenalty = 0,
         double frequencyPenalty = 0,
-        IEnumerable<string>? stopSequences = null)
+        IEnumerable<string>? stopSequences = null,
+        int httpTimeoutInSeconds = OpenAIClientAbstract.DefaultHttpTimeoutInSeconds)
     {
         functionName ??= RandomFunctionName();
 
@@ -57,8 +60,9 @@ public static class InlineFunctionsDefinitionExtension
                 PresencePenalty = presencePenalty,
                 FrequencyPenalty = frequencyPenalty,
                 MaxTokens = maxTokens,
-                StopSequences = stopSequences?.ToList() ?? new List<string>()
-            }
+                StopSequences = stopSequences?.ToList() ?? new List<string>(),
+            },
+            HttpTimeoutInSeconds = httpTimeoutInSeconds,
         };
 
         return kernel.CreateSemanticFunction(

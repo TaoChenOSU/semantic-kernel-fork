@@ -2,6 +2,7 @@
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Microsoft.SemanticKernel.AI.OpenAI.Clients;
 using Microsoft.SemanticKernel.Diagnostics;
 using Microsoft.SemanticKernel.Text;
 
@@ -151,6 +152,13 @@ public class PromptTemplateConfig
     [JsonPropertyOrder(6)]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public InputConfig Input { get; set; } = new();
+
+    /// <summary>
+    /// The number of seconds to wait before the request to the completion backend times out.
+    /// </summary>
+    [JsonPropertyName("http_timeout_in_seconds")]
+    [JsonPropertyOrder(7)]
+    public int HttpTimeoutInSeconds { get; set; } = OpenAIClientAbstract.DefaultHttpTimeoutInSeconds;
 
     /// <summary>
     /// Remove some default properties to reduce the JSON complexity.

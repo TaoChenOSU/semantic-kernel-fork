@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.AI.OpenAI.HttpSchema;
@@ -106,8 +107,13 @@ public abstract class AzureOpenAIClientAbstract : OpenAIClientAbstract
     /// <exception cref="AIException">AIException thrown during the request.</exception>
     protected async Task CacheDeploymentsAsync()
     {
+        CancellationTokenSource cancellationSource = new CancellationTokenSource();
+        cancellationSource.CancelAfter(TimeSpan.FromSeconds(DefaultHttpTimeoutInSeconds));
+
         var url = $"{this.Endpoint}/openai/deployments?api-version={this.AzureOpenAIApiVersion}";
-        HttpResponseMessage response = await this.HTTPClient.GetAsync(url);
+        HttpResponseMessage response = await this.HTTPClient.GetAsync(url, cancellationSource.Token);
+        cancellationSource.Dispose();
+
         if (!response.IsSuccessStatusCode)
         {
             throw new AIException(

@@ -42,37 +42,40 @@ public sealed class AzureTextCompletion : AzureOpenAIClientAbstract, ITextComple
     /// Creates a completion for the provided prompt and parameters
     /// </summary>
     /// <param name="text">Text to complete</param>
-    /// <param name="requestSettings">Request settings for the completion API</param>
+    /// <param name="aiRequestSettings">The request settings for the completion backend</param>
     /// <returns>The completed text.</returns>
     /// <exception cref="AIException">AIException thrown during the request</exception>
-    public async Task<string> CompleteAsync(string text, CompleteRequestSettings requestSettings)
+    public async Task<string> CompleteAsync(string text, AIRequestSettings aiRequestSettings)
     {
-        Verify.NotNull(requestSettings, "Completion settings cannot be empty");
+        Verify.NotNull(aiRequestSettings, "Request settings cannot be empty");
+        Verify.NotNull(aiRequestSettings.CompleteRequestSettings, "Completion request settings cannot be empty");
+        var completeRequestSettings = aiRequestSettings.CompleteRequestSettings;
 
         var deploymentName = await this.GetDeploymentNameAsync(this._modelId);
         var url = $"{this.Endpoint}/openai/deployments/{deploymentName}/completions?api-version={this.AzureOpenAIApiVersion}";
 
         this.Log.LogDebug("Sending Azure OpenAI completion request to {0}", url);
 
-        if (requestSettings.MaxTokens < 1)
+        if (completeRequestSettings.MaxTokens < 1)
         {
             throw new AIException(
                 AIException.ErrorCodes.InvalidRequest,
-                $"MaxTokens {requestSettings.MaxTokens} is not valid, the value must be greater than zero");
+                $"MaxTokens {completeRequestSettings.MaxTokens} is not valid, the value must be greater than zero");
         }
 
         var requestBody = Json.Serialize(new AzureCompletionRequest
         {
             Prompt = text,
-            Temperature = requestSettings.Temperature,
-            TopP = requestSettings.TopP,
-            PresencePenalty = requestSettings.PresencePenalty,
-            FrequencyPenalty = requestSettings.FrequencyPenalty,
-            MaxTokens = requestSettings.MaxTokens,
-            Stop = requestSettings.StopSequences is { Count: > 0 } ? requestSettings.StopSequences : null,
+            Temperature = completeRequestSettings.Temperature,
+            TopP = completeRequestSettings.TopP,
+            PresencePenalty = completeRequestSettings.PresencePenalty,
+            FrequencyPenalty = completeRequestSettings.FrequencyPenalty,
+            MaxTokens = completeRequestSettings.MaxTokens,
+            Stop = completeRequestSettings.StopSequences is { Count: > 0 } ? completeRequestSettings.StopSequences : null,
         });
 
-        return await this.ExecuteCompleteRequestAsync(url, requestBody);
+
+        return await this.ExecuteCompleteRequestAsync(url, requestBody, aiRequestSettings.HttpTimeoutInSeconds);
     }
 
     #region private ================================================================================

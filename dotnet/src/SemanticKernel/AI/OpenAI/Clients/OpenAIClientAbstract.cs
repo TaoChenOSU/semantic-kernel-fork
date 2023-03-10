@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Mime;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,6 +35,11 @@ public abstract class OpenAIClientAbstract : IDisposable
 
     private readonly HttpClientHandler _httpClientHandler;
 
+    /// <summary>
+    /// The default timeout for the http client if the caller doesn't supply one.
+    /// </summary>
+    public const int DefaultHttpTimeoutInSeconds = 100;
+
     internal OpenAIClientAbstract(ILogger? log = null)
     {
         if (log != null) { this.Log = log; }
@@ -42,6 +48,9 @@ public abstract class OpenAIClientAbstract : IDisposable
         this._httpClientHandler = new() { CheckCertificateRevocationList = true };
         this.HTTPClient = new HttpClient(this._httpClientHandler);
         this.HTTPClient.DefaultRequestHeaders.Add("User-Agent", HTTPUseragent);
+        // Setting the timeout to infinite.
+        // Will use cancellation token for timeout, giving users capability to set timeout per call.
+        this.HTTPClient.Timeout = Timeout.InfiniteTimeSpan;
     }
 
     /// <summary>
@@ -49,15 +58,16 @@ public abstract class OpenAIClientAbstract : IDisposable
     /// </summary>
     /// <param name="url">URL for the completion request API</param>
     /// <param name="requestBody">Prompt to complete</param>
+    /// <param name="httpTimeoutInSeconds">Number of seconds to wait before the request times out</param>
     /// <returns>The completed text</returns>
     /// <exception cref="AIException">AIException thrown during the request.</exception>
-    protected async Task<string> ExecuteCompleteRequestAsync(string url, string requestBody)
+    protected async Task<string> ExecuteCompleteRequestAsync(string url, string requestBody, int httpTimeoutInSeconds = DefaultHttpTimeoutInSeconds)
     {
         try
         {
             this.Log.LogDebug("Sending completion request to {0}: {1}", url, requestBody);
 
-            var result = await this.ExecutePostRequestAsync<CompletionResponse>(url, requestBody);
+            var result = await this.ExecutePostRequestAsync<CompletionResponse>(url, requestBody, httpTimeoutInSeconds);
             if (result.Completions.Count < 1)
             {
                 throw new AIException(
@@ -78,15 +88,16 @@ public abstract class OpenAIClientAbstract : IDisposable
     /// <summary>
     /// Asynchronously sends an embedding request for the text.
     /// </summary>
-    /// <param name="url"></param>
-    /// <param name="requestBody"></param>
+    /// <param name="url">URL for the embedding request API</param>
+    /// <param name="requestBody">Text to be embedded</param>
+    /// <param name="httpTimeoutInSeconds">Number of seconds to wait before the request times out</param>
     /// <returns></returns>
     /// <exception cref="AIException"></exception>
-    protected async Task<IList<Embedding<float>>> ExecuteEmbeddingRequestAsync(string url, string requestBody)
+    protected async Task<IList<Embedding<float>>> ExecuteEmbeddingRequestAsync(string url, string requestBody, int httpTimeoutInSeconds = DefaultHttpTimeoutInSeconds)
     {
         try
         {
-            var result = await this.ExecutePostRequestAsync<EmbeddingResponse>(url, requestBody);
+            var result = await this.ExecutePostRequestAsync<EmbeddingResponse>(url, requestBody, httpTimeoutInSeconds);
             if (result.Embeddings.Count < 1)
             {
                 throw new AIException(
@@ -132,14 +143,22 @@ public abstract class OpenAIClientAbstract : IDisposable
     // HTTP user agent sent to remote endpoints
     private const string HTTPUseragent = "Microsoft Semantic Kernel";
 
-    private async Task<T> ExecutePostRequestAsync<T>(string url, string requestBody)
+    private async Task<T> ExecutePostRequestAsync<T>(string url, string requestBody, int httpTimeoutInSeconds)
     {
+        if (httpTimeoutInSeconds < 1)
+        {
+            throw new AIException(AIException.ErrorCodes.InvalidHttpTimeout, "Invalid http timeout");
+        }
+        CancellationTokenSource cancellationSource = new CancellationTokenSource();
+        cancellationSource.CancelAfter(TimeSpan.FromSeconds(httpTimeoutInSeconds));
+
         string responseJson;
 
         try
         {
             using HttpContent content = new StringContent(requestBody, Encoding.UTF8, MediaTypeNames.Application.Json);
-            HttpResponseMessage response = await this.HTTPClient.PostAsync(url, content);
+            HttpResponseMessage response = await this.HTTPClient.PostAsync(url, content, cancellationSource.Token);
+            cancellationSource.Dispose();
 
             if (response == null)
             {
@@ -213,6 +232,12 @@ public abstract class OpenAIClientAbstract : IDisposable
                             $"Unexpected HTTP response, status: {response.StatusCode:G}");
                 }
             }
+        }
+        catch (TaskCanceledException e)
+        {
+            throw new AIException(
+                AIException.ErrorCodes.RequestCancelled,
+                "Request was cancelled. This could be a manual cancellation or due to a cancellation token timeout.", e);
         }
         catch (Exception e) when (e is not AIException)
         {
