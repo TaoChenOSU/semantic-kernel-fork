@@ -111,6 +111,10 @@ public class ChatSkill
             context.Log.LogError("Failed to deserialize the latest chat message");
             return string.Empty;
         }
+        else if (messages.Count == 0)
+        {
+            return string.Empty;
+        }
 
         string memoryText = "";
         var results = context.Memory.SearchAsync(
@@ -148,9 +152,6 @@ public class ChatSkill
         // TODO: Use contextTokenLimit to determine how much of the chat history to return
         // TODO: relevant history
 
-        var remainingToken = tokenLimit;
-        string historyText = "";
-
         // Clone the context to avoid modifying the original context variables.
         var chatMessagesVariable = context.Variables.Clone();
         chatMessagesVariable.Set("startIdx", "0");
@@ -178,14 +179,15 @@ public class ChatSkill
             context.Log.LogError("Failed to deserialize chat messages");
             return string.Empty;
         }
-
+        var remainingToken = tokenLimit;
+        string historyText = "";
         foreach (var chatMessage in chatMessages)
         {
             var formattedMessage = chatMessage.ToString();
             var estimatedTokenCount = this.EstimateTokenCount(formattedMessage);
             if (remainingToken - estimatedTokenCount > 0)
             {
-                historyText += $"\n{formattedMessage}";
+                historyText = $"{formattedMessage}\n{historyText}";
                 remainingToken -= estimatedTokenCount;
             }
             else
