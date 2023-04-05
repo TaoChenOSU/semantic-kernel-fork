@@ -31,7 +31,7 @@ internal static class SystemPromptDefaults
         SystemDescriptionPrompt,
         SystemResponsePrompt,
         "{{$userIntent}}",
-        "{{ChatSkill.ExtractUserMemories}}",
+        // "{{ChatSkill.ExtractUserMemories}}",
         "{{ChatSkill.ExtractChatHistory}}",
         SystemChatContinuationPrompt
     };
