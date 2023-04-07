@@ -35,8 +35,6 @@ const useClasses = makeStyles({
     },
 });
 
-
-
 export const ChatRoom: React.FC = () => {
     const { audience } = useAppSelector((state: RootState) => state.chat);
     const { conversations, selectedId } = useAppSelector((state: RootState) => state.conversations);
@@ -79,9 +77,9 @@ export const ChatRoom: React.FC = () => {
     const handleSubmit = async (value: string) => {
         log('submitting user chat message');
         const chatInput = {
-                timestamp: new Date().getTime(),
-                sender: account?.homeAccountId,
-                content: value,
+            timestamp: new Date().getTime(),
+            sender: account?.homeAccountId,
+            content: value,
         };
         dispatch(updateConversation({ message: chatInput }));
         await chat.getResponse(value, selectedId);
