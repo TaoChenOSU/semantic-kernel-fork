@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+import { useMsal } from '@azure/msal-react';
 import {
     Button,
     Input,
@@ -12,6 +13,7 @@ import {
 } from '@fluentui/react-components';
 import { EditRegular, Save24Regular } from '@fluentui/react-icons';
 import React, { useEffect, useState } from 'react';
+import { AuthHelper } from '../../libs/auth/AuthHelper';
 import { AlertType } from '../../libs/models/AlertType';
 import { IAsk } from '../../libs/semantic-kernel/model/Ask';
 import { useSemanticKernel } from '../../libs/semantic-kernel/useSemanticKernel';
@@ -84,7 +86,8 @@ export const ChatWindow: React.FC = () => {
     const chatName = conversations[selectedId].title;
     const [title, setTitle] = useState<string | undefined>(selectedId ?? undefined);
     const [isEditing, setIsEditing] = useState<boolean>(false);
-
+    const { instance } = useMsal();
+    
     const onEdit = async () => {
         if (isEditing) {
             if (chatName !== title) {
@@ -96,7 +99,7 @@ export const ChatWindow: React.FC = () => {
                         ],
                     };
 
-                    await sk.invokeAsync(ask, 'ChatMemorySkill', 'EditChat');
+                    await sk.invokeAsync(ask, 'ChatMemorySkill', 'EditChat', await AuthHelper.getSKaSAccessToken(instance));
                     dispatch(editConversationTitle({ id: selectedId ?? '', newTitle: title ?? '' }));
                 } catch (e: any) {
                     const errorMessage = `Unable to retrieve chat to change title. Details: ${e.message ?? e}`;
@@ -114,6 +117,7 @@ export const ChatWindow: React.FC = () => {
     useEffect(() => {
         setTitle(chatName);
         setIsEditing(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedId]);
 
     return (
@@ -139,7 +143,7 @@ export const ChatWindow: React.FC = () => {
                                 icon={isEditing ? <Save24Regular /> : <EditRegular />}
                                 appearance="transparent"
                                 onClick={onEdit}
-                                disabled={!title}
+                                disabled={title === undefined || !title}
                             />
                         }
                     </div>
