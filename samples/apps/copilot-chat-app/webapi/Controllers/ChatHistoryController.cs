@@ -20,6 +20,7 @@ public class ChatHistoryController : ControllerBase
     private readonly ILogger<ChatHistoryController> _logger;
     private readonly ChatSessionRepository _chatSessionRepository;
     private readonly ChatMessageRepository _chatMessageRepository;
+    private readonly ChatInvitationRepository _chatInvitationRepository;
     private readonly PromptSettings _promptSettings;
 
     /// <summary>
@@ -28,16 +29,19 @@ public class ChatHistoryController : ControllerBase
     /// <param name="logger">The logger.</param>
     /// <param name="chatSessionRepository">The chat session repository.</param>
     /// <param name="chatMessageRepository">The chat message repository.</param>
+    /// <param name="chatInvitationRepository">The chat invitation repository.</param>
     /// <param name="promptSettings">The prompt settings.</param>
     public ChatHistoryController(
         ILogger<ChatHistoryController> logger,
         ChatSessionRepository chatSessionRepository,
         ChatMessageRepository chatMessageRepository,
+        ChatInvitationRepository chatInvitationRepository,
         PromptSettings promptSettings)
     {
         this._logger = logger;
         this._chatSessionRepository = chatSessionRepository;
         this._chatMessageRepository = chatMessageRepository;
+        this._chatInvitationRepository = chatInvitationRepository;
         this._promptSettings = promptSettings;
     }
 
@@ -102,13 +106,16 @@ public class ChatHistoryController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAllChatSessionsAsync(string userId)
     {
-        var chats = await this._chatSessionRepository.FindByUserIdAsync(userId);
-        if (chats == null)
-        {
-            // Return an empty list if no chats are found
-            return this.Ok(new List<ChatSession>());
-        }
+        // Get all chats that is created by the user
+        var owned_chats = await this._chatSessionRepository.FindByUserIdAsync(userId);
 
+        // Get all chats that the user is invited to.
+        var invitations = await this._chatInvitationRepository.FindAcceptedInvitationByUserIdAsync(userId);
+        var invited_chats = invitations
+            .Select(async i => await this._chatSessionRepository.FindByIdAsync(i.ChatId))
+            .Select(t => t.Result);
+
+        var chats = owned_chats.Concat(invited_chats);
         return this.Ok(chats);
     }
 
