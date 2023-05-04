@@ -3,9 +3,11 @@
 import { FC, useCallback } from 'react';
 
 import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Tooltip } from '@fluentui/react-components';
-import { ArrowDownloadRegular, ShareRegular } from '@fluentui/react-icons';
+import { ArrowDownloadRegular, PeopleTeamAddRegular, ShareRegular } from '@fluentui/react-icons';
+import React from 'react';
 import { useChat } from '../../libs/useChat';
 import { useFile } from '../../libs/useFile';
+import { InvitationDialog } from './invitation-dialog/InvitationDialog';
 
 interface ShareBotMenuProps {
     chatId: string;
@@ -15,6 +17,7 @@ interface ShareBotMenuProps {
 export const ShareBotMenu: FC<ShareBotMenuProps> = ({ chatId, chatTitle }) => {
     const chat = useChat();
     const { downloadFile } = useFile();
+    const [ isGettingInvitationLink, setIsGettingInvitationLink ] = React.useState(false);
 
     const onDownloadBotClick = useCallback(async () => {
         // TODO: Add a loading indicator
@@ -26,7 +29,16 @@ export const ShareBotMenu: FC<ShareBotMenuProps> = ({ chatId, chatTitle }) => {
         );
     }, [chat, chatId, chatTitle, downloadFile]);
 
+    const onInviteOthersClick = () => {
+        setIsGettingInvitationLink(true);
+    };
+
+    const onInviteOthersCancel = () => {
+        setIsGettingInvitationLink(false);
+    };
+
     return (
+        <div>
         <Menu>
             <MenuTrigger disableButtonEnhancement>
                 <Tooltip content="Share" relationship="label">
@@ -38,8 +50,13 @@ export const ShareBotMenu: FC<ShareBotMenuProps> = ({ chatId, chatTitle }) => {
                     <MenuItem icon={<ArrowDownloadRegular />} onClick={onDownloadBotClick}>
                         Download your Bot
                     </MenuItem>
+                    <MenuItem icon={<PeopleTeamAddRegular />} onClick={onInviteOthersClick}>
+                        Invite others to your Bot
+                    </MenuItem>
                 </MenuList>
             </MenuPopover>
         </Menu>
+            {isGettingInvitationLink && <InvitationDialog onCancel={onInviteOthersCancel} chatId={chatId} />}
+        </div>
     );
 };

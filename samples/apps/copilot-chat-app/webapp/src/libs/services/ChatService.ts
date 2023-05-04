@@ -1,5 +1,9 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+import { IPublicClientApplication, InteractionStatus } from '@azure/msal-browser';
+import { Url } from 'url';
+import { TokenHelper } from '../auth/TokenHelper';
+import { IChatInvitation } from '../models/ChatInvitation';
 import { IChatMessage } from '../models/ChatMessage';
 import { IChatSession } from '../models/ChatSession';
 import { BaseService } from './BaseService';
@@ -86,5 +90,50 @@ export class ChatService extends BaseService {
         );
 
         return result;
+    };
+
+    public getChatInvitationLinkAsync = async (chatId: string, userId: string, accessToken: string): Promise<Url> => {
+        const body: IChatInvitation = {
+            userId: userId,
+            chatId: chatId,
+        }
+
+        const result = await this.getResponseAsync<Url>(
+            {
+                commandPath: `chatInvitation/invite`,
+                method: 'POST',
+                body: body,
+            },
+            accessToken,
+        );
+
+        return result;
+    };
+
+    public getUserIDFromUserEmailAsync = async (
+        userEmail: string,
+        instance: IPublicClientApplication,
+        inProgress: InteractionStatus
+    ): Promise<string> => {
+        const token = await TokenHelper.getAccessTokenUsingMsal(inProgress, instance, ["User.ReadBasic.All"]);
+        const request = new URL(`/v1.0/users?$search="mail:${userEmail}"&$count=true`, 'https://graph.microsoft.com');
+        const response = await fetch(request, {
+            method: 'GET',
+            headers: {
+                ConsistencyLevel: 'eventual',
+                Authorization: `Bearer ${token}`,
+            },
+        });
+
+        if (!response || !response.ok) {
+            throw new Error('Failed to get user ID from user email');
+        }
+         
+        const data = await response.json();
+        if (data.value.length > 0) {
+            return data.value[0].id;
+        } else {
+            throw new Error('Failed to get user ID from user email');
+        }
     };
 }
