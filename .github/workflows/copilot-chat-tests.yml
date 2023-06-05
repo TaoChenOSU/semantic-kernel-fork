@@ -1,0 +1,14 @@
+name: Copilot Chat Tests
+on:
+  push:
+    branches: [ "main", "feature*" ]
+    paths: 
+      - 'samples/apps/copilot-chat-app/**'
+  pull_request:
+    branches: [ "main", "feature*" ]
+    paths: 
+      - 'samples/apps/copilot-chat-app/**'
+jobs:
+  test:
+    steps:
+    - uses: ./samples/apps/copilot-chat-app/webapp/.github/workflows
