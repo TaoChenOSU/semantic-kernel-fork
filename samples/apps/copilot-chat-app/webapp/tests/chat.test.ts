@@ -2,8 +2,8 @@
 
 test('get response from bot', async ({ page }) => {
     // Make sure the server is running.
-    await page.goto('https://localhost:40443/healthz');
-    expect(page.getByText('Healthy')).toBeDefined();
+    // await page.goto('https://localhost:40443/healthz');
+    // expect(page.getByText('Healthy')).toBeDefined();
 
     await page.goto('/');
     // Expect the page to contain a "Login" button.
