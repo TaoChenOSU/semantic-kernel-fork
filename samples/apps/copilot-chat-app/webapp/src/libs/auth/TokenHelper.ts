@@ -41,6 +41,7 @@ const acquireToken = async (
     msalInstance: IPublicClientApplication,
     interactionStatus: InteractionStatus,
 ) => {
+    console.log('acquireToken');
     return msalInstance
         .acquireTokenSilent(accessTokenRequest)
         .then(function (accessTokenResponse) {

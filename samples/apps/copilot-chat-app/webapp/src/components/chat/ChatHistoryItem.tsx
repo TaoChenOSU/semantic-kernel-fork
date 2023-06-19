@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import { useMsal } from '@azure/msal-react';
 import { Persona, Text, makeStyles, mergeClasses, shorthands, tokens } from '@fluentui/react-components';
 import React from 'react';
 import { AuthorRoles, IChatMessage } from '../../libs/models/ChatMessage';
@@ -76,8 +75,8 @@ const createCommandLink = (command: string) => {
 export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({ message, getResponse, messageIndex }) => {
     const classes = useClasses();
 
-    const { instance } = useMsal();
-    const account = instance.getActiveAccount();
+    // const { instance } = useMsal();
+    // const account = instance.getActiveAccount();
 
     const chat = useChat();
     const { conversations, selectedId } = useAppSelector((state: RootState) => state.conversations);
@@ -96,7 +95,7 @@ export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({ message, getRe
               .replace(/ {2}/g, '&nbsp;&nbsp;')
         : '';
 
-    const isMe = message.authorRole === AuthorRoles.User && message.userId === account?.homeAccountId!;
+    const isMe = true;  //message.authorRole === AuthorRoles.User && message.userId === account?.homeAccountId!;
     const isBot = message.authorRole === AuthorRoles.Bot;
     const user = chat.getChatUserById(message.userName, selectedId, conversations[selectedId].users);
     const fullName = user?.fullName ?? message.userName;

@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import { useMsal } from '@azure/msal-react';
 import {
     Caption1,
     Card,
@@ -14,7 +13,7 @@ import {
     tokens,
 } from '@fluentui/react-components';
 import React from 'react';
-import { AuthorRoles, IChatMessage } from '../../libs/models/ChatMessage';
+import { IChatMessage } from '../../libs/models/ChatMessage';
 import { timestampToDateString } from '../utils/TextUtils';
 import { getFileIconByFileExtension } from './ChatResourceList';
 
@@ -92,9 +91,10 @@ interface DocumentMessageContent {
 
 export const ChatHistoryFileItem: React.FC<ChatHistoryFileItemProps> = ({ message }) => {
     const classes = useClasses();
-    const { instance } = useMsal();
-    const account = instance.getActiveAccount();
-    const isMe = message.authorRole === AuthorRoles.User && message.userId === account?.homeAccountId!;
+    // const { instance } = useMsal();
+    // const account = instance.getActiveAccount();
+    // const isMe = message.authorRole === AuthorRoles.User && message.userId === account?.homeAccountId!;
+    const isMe = true;
 
     let name = '',
         size = '';

@@ -54,10 +54,13 @@ const logoutRequest: EndSessionRequest = {
 };
 
 const ssoSilentRequest = async (msalInstance: IPublicClientApplication) => {
+    console.log('ssoSilentRequest');
     await msalInstance.ssoSilent({ account: msalInstance.getActiveAccount() || undefined, scopes: Constants.msal.semanticKernelScopes });
 };
 
 const loginAsync = async (instance: IPublicClientApplication) => {
+    console.log('loginAsync');
+
     if (Constants.msal.method === 'redirect') {
         await instance.loginRedirect({ scopes: Constants.msal.semanticKernelScopes });
     } else {
@@ -66,6 +69,7 @@ const loginAsync = async (instance: IPublicClientApplication) => {
 };
 
 const logoutAsync = async (instance: IPublicClientApplication) => {
+    console.log('logoutAsync');
     if (Constants.msal.method === 'popup') {
         void instance.logoutPopup(logoutRequest);
     }
@@ -77,6 +81,7 @@ const logoutAsync = async (instance: IPublicClientApplication) => {
 // SKaaS = Semantic Kernel as a Service
 // Gets token with scopes to authorize SKaaS specifically
 const getSKaaSAccessToken = async (instance: IPublicClientApplication, inProgress: InteractionStatus) => {
+    console.log('getSKaaSAccessToken');
     return await TokenHelper.getAccessTokenUsingMsal(inProgress, instance, Constants.msal.semanticKernelScopes);
 };
 

@@ -37,7 +37,7 @@ export const UserSettings: FC<IUserSettingsProps> = ({ setLoadingState }) => {
     const classes = useClasses();
     const { instance } = useMsal();
 
-    const account = instance.getActiveAccount();
+    // const account = instance.getActiveAccount();
 
     const onLogout = useCallback(async () => {
         setLoadingState();
@@ -51,8 +51,8 @@ export const UserSettings: FC<IUserSettingsProps> = ({ setLoadingState }) => {
                 {
                     <Avatar
                         className={classes.root}
-                        key={account?.name ?? account?.username}
-                        name={account?.name ?? account?.username}
+                        key={''}
+                        name={''}
                         size={28}
                         badge={{ status: 'available' }}
                     />
@@ -62,8 +62,8 @@ export const UserSettings: FC<IUserSettingsProps> = ({ setLoadingState }) => {
                 <MenuList>
                     <MenuItem className={classes.persona}>
                         <Persona
-                            name={account?.name ?? account?.username}
-                            secondaryText={account?.username}
+                            name={''}
+                            secondaryText={''}
                             presence={{ status: 'available' }}
                             avatar={{ color: 'colorful' }}
                         />
