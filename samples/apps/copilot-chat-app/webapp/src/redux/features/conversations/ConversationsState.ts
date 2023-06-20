@@ -10,13 +10,13 @@ export type Conversations = {
 export interface ConversationsState {
     conversations: Conversations;
     selectedId: string;
-    loggedInUserId: string;
+    loggedInUserId?: string;
 }
 
 export const initialState: ConversationsState = {
     conversations: {},
     selectedId: '',
-    loggedInUserId: '',
+    loggedInUserId: undefined,
 };
 
 export type UpdateConversationPayload = {

@@ -49,7 +49,7 @@ export const useChat = () => {
     const botProfilePictures: string[] = [botIcon1, botIcon2, botIcon3, botIcon4, botIcon5];
 
     const loggedInUser: IChatUser = {
-        id: loggedInUserId,
+        id: loggedInUserId!,
         fullName: '',
         emailAddress: '',
         photo: undefined, // TODO: Make call to Graph /me endpoint to load photo
@@ -69,18 +69,9 @@ export const useChat = () => {
         const accessToken = await AuthHelper.getSKaaSAccessToken(instance, inProgress);
         try {
             await chatService
-                .createChatAsync(
-                    loggedInUserId!,
-                    chatTitle,
-                    accessToken,
-                )
+                .createChatAsync(loggedInUserId!, chatTitle, accessToken)
                 .then(async (result: IChatSession) => {
-                    const chatMessages = await chatService.getChatMessagesAsync(
-                        result.id,
-                        0,
-                        1,
-                        accessToken,
-                    );
+                    const chatMessages = await chatService.getChatMessagesAsync(result.id, 0, 1, accessToken);
 
                     const newChat: ChatState = {
                         id: result.id,
@@ -143,26 +134,15 @@ export const useChat = () => {
     const loadChats = async () => {
         const accessToken = await AuthHelper.getSKaaSAccessToken(instance, inProgress);
         try {
-            const chatSessions = await chatService.getAllChatsAsync(
-                loggedInUserId!,
-                accessToken,
-            );
+            const chatSessions = await chatService.getAllChatsAsync(loggedInUserId!, accessToken);
 
             if (chatSessions.length > 0) {
                 const loadedConversations: Conversations = {};
                 for (const index in chatSessions) {
                     const chatSession = chatSessions[index];
-                    const chatMessages = await chatService.getChatMessagesAsync(
-                        chatSession.id,
-                        0,
-                        100,
-                        accessToken,
-                    );
+                    const chatMessages = await chatService.getChatMessagesAsync(chatSession.id, 0, 100, accessToken);
 
-                    const chatUsers = await chatService.getAllChatParticipantsAsync(
-                        chatSession.id,
-                        accessToken,
-                    );
+                    const chatUsers = await chatService.getAllChatParticipantsAsync(chatSession.id, accessToken);
 
                     loadedConversations[chatSession.id] = {
                         id: chatSession.id,
@@ -205,12 +185,7 @@ export const useChat = () => {
         botService
             .uploadAsync(bot, loggedInUserId || '', accessToken)
             .then(async (chatSession: IChatSession) => {
-                const chatMessages = await chatService.getChatMessagesAsync(
-                    chatSession.id,
-                    0,
-                    100,
-                    accessToken,
-                );
+                const chatMessages = await chatService.getChatMessagesAsync(chatSession.id, 0, 100, accessToken);
 
                 const newChat = {
                     id: chatSession.id,
@@ -250,7 +225,7 @@ export const useChat = () => {
     const importDocument = async (chatId: string, file: File) => {
         try {
             await documentImportService.importDocumentAsync(
-                loggedInUserId,
+                loggedInUserId!,
                 '',
                 chatId,
                 file,
@@ -290,24 +265,12 @@ export const useChat = () => {
     const joinChat = async (chatId: string) => {
         const accessToken = await AuthHelper.getSKaaSAccessToken(instance, inProgress);
         try {
-            await chatService.joinChatAsync(
-                loggedInUserId,
-                chatId,
-                accessToken
-            ).then(async (result: IChatSession) => {
+            await chatService.joinChatAsync(loggedInUserId!, chatId, accessToken).then(async (result: IChatSession) => {
                 // Get chat messages
-                const chatMessages = await chatService.getChatMessagesAsync(
-                    result.id,
-                    0,
-                    100,
-                    accessToken
-                );
+                const chatMessages = await chatService.getChatMessagesAsync(result.id, 0, 100, accessToken);
 
                 // Get chat users
-                const chatUsers = await chatService.getAllChatParticipantsAsync(
-                    result.id,
-                    accessToken,
-                );
+                const chatUsers = await chatService.getAllChatParticipantsAsync(result.id, accessToken);
 
                 const newChat: ChatState = {
                     id: result.id,
@@ -327,7 +290,7 @@ export const useChat = () => {
         }
 
         return { success: true, message: '' };
-    }
+    };
 
     return {
         getChatUserById,

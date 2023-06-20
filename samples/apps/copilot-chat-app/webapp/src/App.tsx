@@ -1,11 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import {
-    AuthenticatedTemplate,
-    UnauthenticatedTemplate,
-    useIsAuthenticated,
-    useMsal,
-} from '@azure/msal-react';
+import { AuthenticatedTemplate, UnauthenticatedTemplate, useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { Subtitle1, makeStyles, shorthands, tokens } from '@fluentui/react-components';
 import { Alert } from '@fluentui/react-components/unstable';
 import { Dismiss16Regular } from '@fluentui/react-icons';
@@ -66,31 +61,34 @@ const App: FC = () => {
 
     const [appState, setAppState] = React.useState(AppState.ProbeForBackend);
     const { alerts } = useAppSelector((state: RootState) => state.app);
+    const { loggedInUserId } = useAppSelector((state: RootState) => state.conversations);
     const dispatch = useAppDispatch();
 
-    const { instance, inProgress } = useMsal();
-    const account = instance.getActiveAccount();
+    const { instance } = useMsal();
     const isAuthenticated = useIsAuthenticated();
 
     const chat = useChat();
 
     useEffect(() => {
-        if (isAuthenticated && account) {
-            dispatch(setLoggedInUserId(account.homeAccountId));
-
-            if (appState === AppState.LoadingChats) {
-                // Load all chats from the backend.
-                async function loadChats() {
-                    if (await chat.loadChats()) {
-                        setAppState(AppState.Chat);
+        if (isAuthenticated) {
+            if (loggedInUserId === undefined) {
+                const account = instance.getActiveAccount();
+                dispatch(setLoggedInUserId(account?.homeAccountId));
+            } else {
+                if (appState === AppState.LoadingChats) {
+                    // Load all chats from the backend.
+                    async function loadChats() {
+                        if (await chat.loadChats()) {
+                            setAppState(AppState.Chat);
+                        }
                     }
-                }
 
-                loadChats();
+                    loadChats();
+                }
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [instance, inProgress, isAuthenticated, appState]);
+    }, [isAuthenticated, appState, loggedInUserId]);
 
     const onDismissAlert = (key: string) => {
         dispatch(removeAlert(key));
