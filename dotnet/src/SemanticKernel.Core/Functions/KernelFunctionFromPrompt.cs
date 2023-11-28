@@ -148,6 +148,7 @@ internal sealed class KernelFunctionFromPrompt : KernelFunction
             var result = new FunctionResult(this.Name, variables, completion);
 
             result.Metadata.Add(AIFunctionResultExtensions.ModelResultsMetadataKey, modelResults);
+            result.Metadata.Add(AIFunctionResultExtensions.ModelIdKey, completionResults[0].ModelId);
             result.Metadata.Add(KernelEventArgsExtensions.RenderedPromptMetadataKey, renderedPrompt);
 
             return result;

@@ -125,7 +125,7 @@ public abstract class ClientBase
 
         this.CaptureUsageDetails(responseData.Usage);
 
-        return responseData.Choices.Select(choice => new TextResult(responseData, choice)).ToList();
+        return responseData.Choices.Select(choice => new TextResult(responseData, choice, this.DeploymentOrModelName)).ToList();
     }
 
     private protected async IAsyncEnumerable<T> InternalGetTextStreamingUpdatesAsync<T>(
@@ -261,7 +261,7 @@ public abstract class ClientBase
 
         this.CaptureUsageDetails(responseData.Usage);
 
-        return responseData.Choices.Select(chatChoice => new ChatResult(responseData, chatChoice)).ToList();
+        return responseData.Choices.Select(chatChoice => new ChatResult(responseData, chatChoice, this.DeploymentOrModelName)).ToList();
     }
 
     private protected async IAsyncEnumerable<T> InternalGetChatStreamingUpdatesAsync<T>(

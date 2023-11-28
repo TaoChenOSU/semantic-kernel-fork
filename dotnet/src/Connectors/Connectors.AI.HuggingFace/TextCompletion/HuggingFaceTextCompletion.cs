@@ -142,7 +142,7 @@ public sealed class HuggingFaceTextCompletion : ITextCompletion
             };
         }
 
-        return completionResponse.ConvertAll(c => new TextCompletionResult(c));
+        return completionResponse.ConvertAll(c => new TextCompletionResult(c, this._model));
     }
 
     /// <summary>

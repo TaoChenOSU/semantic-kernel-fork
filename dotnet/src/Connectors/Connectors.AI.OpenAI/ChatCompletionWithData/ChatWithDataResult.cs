@@ -13,12 +13,15 @@ namespace Microsoft.SemanticKernel.Connectors.AI.OpenAI.ChatCompletionWithData;
 
 internal sealed class ChatWithDataResult : IChatResult, ITextResult
 {
+    public string ModelId { get; }
+
     public ModelResult ModelResult { get; }
 
-    public ChatWithDataResult(ChatWithDataResponse response, ChatWithDataChoice choice)
+    public ChatWithDataResult(ChatWithDataResponse response, ChatWithDataChoice choice, string modelId)
     {
         Verify.NotNull(response);
         Verify.NotNull(choice);
+        Verify.NotNullOrWhiteSpace(modelId);
 
         this.ModelResult = new(new ChatWithDataModelResult(response.Id, DateTimeOffset.FromUnixTimeSeconds(response.Created))
         {
@@ -26,6 +29,7 @@ internal sealed class ChatWithDataResult : IChatResult, ITextResult
         });
 
         this._choice = choice;
+        this.ModelId = modelId;
     }
 
     public Task<ChatMessage> GetChatMessageAsync(CancellationToken cancellationToken = default)

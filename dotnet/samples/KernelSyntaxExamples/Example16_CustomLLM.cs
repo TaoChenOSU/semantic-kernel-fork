@@ -125,11 +125,11 @@ public static class Example16_CustomLLM
 
         public Task<IReadOnlyList<ITextResult>> GetCompletionsAsync(string text, PromptExecutionSettings? executionSettings, CancellationToken cancellationToken = default)
         {
-            this.ModelId = executionSettings?.ModelId;
+            this.ModelId = executionSettings?.ModelId ?? "CustomModel";
 
             return Task.FromResult<IReadOnlyList<ITextResult>>(new List<ITextResult>
             {
-                new MyTextCompletionStreamingResult()
+                new MyTextCompletionStreamingResult(this.ModelId)
             });
         }
 
@@ -172,14 +172,19 @@ public static class Example16_CustomLLM
 
     private sealed class MyTextCompletionStreamingResult : ITextResult
     {
-        private readonly ModelResult _modelResult = new(new
+        public ModelResult ModelResult { get; } = new(new
         {
             Content = LLMResultText,
             Message = "This is my model raw response",
             Tokens = LLMResultText.Split(' ').Length
         });
 
-        public ModelResult ModelResult => this._modelResult;
+        public string ModelId { get; }
+
+        public MyTextCompletionStreamingResult(string modelId)
+        {
+            this.ModelId = modelId;
+        }
 
         public async Task<string> GetCompletionAsync(CancellationToken cancellationToken = default)
         {

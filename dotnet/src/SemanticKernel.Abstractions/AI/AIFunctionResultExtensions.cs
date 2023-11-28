@@ -16,6 +16,11 @@ public static class AIFunctionResultExtensions
     public const string ModelResultsMetadataKey = "ModelResults";
 
     /// <summary>
+    /// Function model id key for <see cref="ModelResult"/> records.
+    /// </summary>
+    public const string ModelIdKey = "ModelId";
+
+    /// <summary>
     /// Returns collection of <see cref="ModelResult"/> records from <see cref="FunctionResult"/> metadata.
     /// </summary>
     /// <param name="result">Instance of <see cref="FunctionResult"/> class.</param>
@@ -24,6 +29,20 @@ public static class AIFunctionResultExtensions
         if (result.TryGetMetadataValue(ModelResultsMetadataKey, out IReadOnlyCollection<ModelResult>? modelResults))
         {
             return modelResults;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the model Id from <see cref="FunctionResult"/> metadata.
+    /// </summary>
+    /// <param name="result">Instance of <see cref="FunctionResult"/> class.</param>
+    public static string? GetModelId(this FunctionResult result)
+    {
+        if (result.TryGetMetadataValue(ModelIdKey, out string? modelId))
+        {
+            return modelId;
         }
 
         return null;

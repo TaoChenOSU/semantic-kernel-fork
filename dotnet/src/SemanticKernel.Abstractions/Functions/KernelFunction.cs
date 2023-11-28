@@ -35,6 +35,30 @@ public abstract class KernelFunction
         unit: "s",
         description: "Measures the duration of a function’s execution");
 
+    /// <summary><see cref="Counter{T}"/> to keep track of the number of prompt tokens used.</summary>
+    private static readonly Counter<int> s_promptTokensCounter = s_meter.CreateCounter<int>(
+        name: "sk.function.token.prompt",
+        unit: "{token}",
+        description: "Number of prompt tokens used");
+
+    /// <summary><see cref="Counter{T}"/> to keep track of the number of prompt tokens used.</summary>
+    private static readonly Counter<int> s_completionTokenCounter = s_meter.CreateCounter<int>(
+        name: "sk.function.prompt.completion",
+        unit: "{token}",
+        description: "Number of completion tokens used");
+
+    /// <summary><see cref="Counter{T}"/> to keep track of the number of successful execution.</summary>
+    private static readonly Counter<int> s_successCounter = s_meter.CreateCounter<int>(
+        name: "sk.function.success",
+        unit: "{execution}",
+        description: "Number of successful function executions");
+
+    /// <summary><see cref="Counter{T}"/> to keep track of the number of failed execution.</summary>
+    private static readonly Counter<int> s_failureCounter = s_meter.CreateCounter<int>(
+        name: "sk.function.failure",
+        unit: "{execution}",
+        description: "Number of failed function executions");
+
     /// <summary>
     /// Gets the name of the function.
     /// </summary>
@@ -129,6 +153,8 @@ public abstract class KernelFunction
 
             logger.LogTrace("Function succeeded.");
 
+            this.CaptureUsageDetails(result, logger);
+
             // Invoke the post hook.
             (var invokedEventArgs, result) = this.CallFunctionInvoked(kernel, variables, result);
 
@@ -142,6 +168,8 @@ public abstract class KernelFunction
             result.IsCancellationRequested = invokedEventArgs?.CancelToken.IsCancellationRequested ?? false;
             result.IsRepeatRequested = invokedEventArgs?.IsRepeatRequested ?? false;
 
+            s_successCounter.Add(1, in tags);
+
             return result;
         }
         catch (Exception ex)
@@ -151,6 +179,7 @@ public abstract class KernelFunction
             {
                 logger.LogError(ex, "Function failed. Error: {Message}", ex.Message);
             }
+            s_failureCounter.Add(1, in tags);
             throw;
         }
         finally
@@ -244,6 +273,63 @@ public abstract class KernelFunction
         }
 
         return (eventArgs, result);
+    }
+
+    /// <summary>
+    /// Captures usage details from the function result. Note that not all services support usage details.
+    /// If the model id is not found in the function result, no usage details are captured.
+    /// If the usage details are not found in the model result, no usage details are captured.
+    /// Model id is used as the dimension for the usage metrics.
+    /// </summary>
+    /// <param name="result">The function result.</param>
+    /// <param name="logger">The logger.</param>
+    private void CaptureUsageDetails(FunctionResult result, ILogger logger)
+    {
+        if (result.GetModelId() is null)
+        {
+            logger.LogInformation("Model id not found in function result.");
+            return;
+        }
+        var modelId = result.GetModelId();
+
+        if (result.GetModelResults() is null)
+        {
+            logger.LogInformation("Model results not found in function result.");
+            return;
+        }
+        var modelResult = result.GetModelResults().FirstOrDefault();
+        var modelResultJson = modelResult?.GetJsonResult();
+
+        var promptTokens = 0;
+        var completionTokens = 0;
+        try
+        {
+            var tokenUsage = modelResultJson.GetValueOrDefault().GetProperty("Usage");
+            promptTokens = tokenUsage.GetProperty("PromptTokens").GetInt32();
+            completionTokens = tokenUsage.GetProperty("CompletionTokens").GetInt32();
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException)
+        {
+            logger.LogInformation("Usage details not found in model result.");
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error while parsing usage details from model result.");
+            throw;
+        }
+
+        logger.LogInformation(
+            "Prompt tokens: {PromptTokens}. Completion tokens: {CompletionTokens}.",
+            promptTokens, completionTokens);
+
+        TagList tags = new() {
+            { "sk.function.name", this.Name },
+            { "sk.function.model_id", modelId }
+        };
+
+        s_promptTokensCounter.Add(promptTokens, in tags);
+        s_completionTokenCounter.Add(completionTokens, in tags);
     }
     #endregion
 }

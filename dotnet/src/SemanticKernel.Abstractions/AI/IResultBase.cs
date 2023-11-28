@@ -10,6 +10,11 @@ namespace Microsoft.SemanticKernel.AI;
 public interface IResultBase
 {
     /// <summary>
+    /// Model name or Id
+    /// </summary>
+    string ModelId { get; }
+
+    /// <summary>
     /// Gets the model result data.
     /// </summary>
     ModelResult ModelResult { get; }

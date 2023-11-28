@@ -10,16 +10,18 @@ namespace Microsoft.SemanticKernel.Connectors.AI.OpenAI.AzureSdk;
 
 internal sealed class TextResult : ITextResult
 {
-    private readonly ModelResult _modelResult;
     private readonly Choice _choice;
 
-    public TextResult(Completions resultData, Choice choice)
+    public TextResult(Completions resultData, Choice choice, string modelId)
     {
-        this._modelResult = new(new TextModelResult(resultData, choice));
+        this.ModelResult = new(new TextModelResult(resultData, choice));
         this._choice = choice;
+        this.ModelId = modelId;
     }
 
-    public ModelResult ModelResult => this._modelResult;
+    public ModelResult ModelResult { get; }
+
+    public string ModelId { get; }
 
     public Task<string> GetCompletionAsync(CancellationToken cancellationToken = default)
     {

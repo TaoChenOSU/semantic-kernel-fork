@@ -74,7 +74,8 @@ public sealed class KernelFunctionExtensionsTests : IDisposable
 
         Task<IReadOnlyList<ITextResult>> ITextCompletion.GetCompletionsAsync(string text, PromptExecutionSettings? executionSettings, CancellationToken cancellationToken)
         {
-            return Task.FromResult<IReadOnlyList<ITextResult>>(new List<ITextResult> { new RedirectTextCompletionResult(text) });
+            var modelId = requestSettings?.ModelId ?? this.ModelId ?? "RedirectTextCompletionModel";
+            return Task.FromResult<IReadOnlyList<ITextResult>>(new List<ITextResult> { new RedirectTextCompletionResult(text, modelId) });
         }
 
         public IAsyncEnumerable<T> GetStreamingContentAsync<T>(string prompt, PromptExecutionSettings? executionSettings = null, CancellationToken cancellationToken = default)
@@ -87,12 +88,15 @@ public sealed class KernelFunctionExtensionsTests : IDisposable
     {
         private readonly string _completion;
 
-        public RedirectTextCompletionResult(string completion)
+        public RedirectTextCompletionResult(string completion, string modelId)
         {
             this._completion = completion;
+            this.ModelId = modelId;
         }
 
         public ModelResult ModelResult => new(this._completion);
+
+        public string ModelId { get; }
 
         public Task<string> GetCompletionAsync(CancellationToken cancellationToken = default)
         {

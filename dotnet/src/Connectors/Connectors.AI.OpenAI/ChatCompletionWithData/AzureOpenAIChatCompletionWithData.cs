@@ -159,7 +159,7 @@ public sealed class AzureOpenAIChatCompletionWithData : IChatCompletion, ITextCo
 
         var chatWithDataResponse = this.DeserializeResponse<ChatWithDataResponse>(body);
 
-        return chatWithDataResponse.Choices.Select(choice => new ChatWithDataResult(chatWithDataResponse, choice)).ToList();
+        return chatWithDataResponse.Choices.Select(choice => new ChatWithDataResult(chatWithDataResponse, choice, this._config.CompletionModelId)).ToList();
     }
 
     private async Task<HttpResponseMessage> SendRequestAsync(
