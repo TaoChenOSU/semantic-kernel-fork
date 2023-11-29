@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.AI;
 using Microsoft.SemanticKernel.Events;
+using Microsoft.SemanticKernel.Instrumentation;
 using Microsoft.SemanticKernel.Orchestration;
 
 #pragma warning disable IDE0130
@@ -133,6 +134,11 @@ public abstract class KernelFunction
         cancellationToken.ThrowIfCancellationRequested();
 
         TagList tags = new() { { "sk.function.name", this.Name } };
+        if (kernel.InstrumentationOptions.IncludeSensitiveData)
+        {
+            tags.Add("sk.function.input", variables.Input);
+        }
+
         long startingTimestamp = Stopwatch.GetTimestamp();
         try
         {
@@ -152,17 +158,19 @@ public abstract class KernelFunction
             var result = await this.InvokeCoreAsync(kernel, variables, executionSettings, cancellationToken).ConfigureAwait(false);
 
             logger.LogTrace("Function succeeded.");
-
             this.CaptureUsageDetails(result, logger);
+            if (kernel.InstrumentationOptions.IncludeSensitiveData)
+            {
+                tags.Add("sk.function.output", result.Value);
+            }
 
             // Invoke the post hook.
             (var invokedEventArgs, result) = this.CallFunctionInvoked(kernel, variables, result);
 
             if (logger.IsEnabled(LogLevel.Trace))
             {
-                logger.LogTrace("Function invocation {Completion}: {Result}",
-                    invokedEventArgs?.CancelToken.IsCancellationRequested ?? false ? "canceled" : "completed",
-                    result.Value);
+                logger.LogTrace("Function invocation {Completion}.",
+                    invokedEventArgs?.CancelToken.IsCancellationRequested ?? false ? "canceled" : "completed");
             }
 
             result.IsCancellationRequested = invokedEventArgs?.CancelToken.IsCancellationRequested ?? false;
@@ -186,6 +194,7 @@ public abstract class KernelFunction
         {
             TimeSpan duration = new((long)((Stopwatch.GetTimestamp() - startingTimestamp) * (10_000_000.0 / Stopwatch.Frequency)));
             s_invocationDuration.Record(duration.TotalSeconds, in tags);
+            activity?.AddTags(tags);
             if (logger.IsEnabled(LogLevel.Information))
             {
                 logger.LogInformation("Function completed. Duration: {Duration}ms", duration.TotalMilliseconds);
@@ -220,6 +229,13 @@ public abstract class KernelFunction
 
             yield break;
         }
+
+        TagList tags = new() { { "sk.function.name", this.Name } };
+        if (kernel.InstrumentationOptions.IncludeSensitiveData)
+        {
+            tags.Add("sk.function.input", variables.Input);
+        }
+        activity?.AddTags(tags);
 
         await foreach (var genericChunk in this.InvokeCoreStreamingAsync<T>(kernel, variables, executionSettings, cancellationToken))
         {

@@ -74,7 +74,7 @@ public sealed class KernelFunctionExtensionsTests : IDisposable
 
         Task<IReadOnlyList<ITextResult>> ITextCompletion.GetCompletionsAsync(string text, PromptExecutionSettings? executionSettings, CancellationToken cancellationToken)
         {
-            var modelId = requestSettings?.ModelId ?? this.ModelId ?? "RedirectTextCompletionModel";
+            var modelId = executionSettings?.ModelId ?? this.ModelId ?? "RedirectTextCompletionModel";
             return Task.FromResult<IReadOnlyList<ITextResult>>(new List<ITextResult> { new RedirectTextCompletionResult(text, modelId) });
         }
 

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel.AI;
 using Microsoft.SemanticKernel.Events;
+using Microsoft.SemanticKernel.Instrumentation;
 using Microsoft.SemanticKernel.Orchestration;
 using Microsoft.SemanticKernel.Services;
 
@@ -34,6 +35,9 @@ public sealed class Kernel
     private CultureInfo _culture = CultureInfo.CurrentCulture;
     /// <summary>The collection of plugins, initialized via the constructor or lazily-initialized on first access via <see cref="Plugins"/>.</summary>
     private KernelPluginCollection? _plugins;
+
+    /// <summary><see cref="InstrumentationOptions"/> controls what data is included in instrumentation in the kernel.</summary>
+    private InstrumentationOptions _instrumentationOptions = new();
 
     /// <summary>
     /// Initializes a new instance of <see cref="Kernel"/>.
@@ -88,6 +92,7 @@ public sealed class Kernel
             PromptRendered = this.PromptRendered,
             _data = this._data is { Count: > 0 } ? new Dictionary<string, object?>(this._data) : null,
             _culture = this._culture,
+            _instrumentationOptions = this._instrumentationOptions,
         };
 
     #region Core State: Plugins and Services
@@ -103,6 +108,17 @@ public sealed class Kernel
     /// Gets the service provider used to query for services available through the kernel.
     /// </summary>
     public IServiceProvider Services { get; }
+    #endregion
+
+    #region Instrumentation
+    /// <summary>
+    /// Gets or sets the <see cref="InstrumentationOptions"/> controlling what data is included in instrumentation in the kernel.
+    /// </summary>
+    public InstrumentationOptions InstrumentationOptions
+    {
+        get => this._instrumentationOptions;
+        set => this._instrumentationOptions = value ?? new InstrumentationOptions();
+    }
     #endregion
 
     #region Additional Transient State
