@@ -179,7 +179,7 @@ public sealed class AzureOpenAIChatCompletionWithData : IChatCompletion, ITextCo
 
         var chatWithDataResponse = this.DeserializeResponse<ChatWithDataResponse>(body);
 
-        return chatWithDataResponse.Choices.Select(choice => new ChatWithDataResult(chatWithDataResponse, choice)).ToList();
+        return chatWithDataResponse.Choices.Select(choice => new ChatWithDataResult(chatWithDataResponse, choice, this._config.CompletionModelId)).ToList();
     }
 
     private async Task<HttpResponseMessage> SendRequestAsync(
@@ -235,7 +235,7 @@ public sealed class AzureOpenAIChatCompletionWithData : IChatCompletion, ITextCo
                     continue;
                 }
 
-                var result = new ChatWithDataStreamingResult(chatWithDataResponse, choice);
+                var result = new ChatWithDataStreamingResult(chatWithDataResponse, choice, this._config.CompletionModelId);
                 if (typeof(T) == typeof(string))
                 {
                     await foreach (SemanticKernel.AI.ChatCompletion.ChatMessage message in result.GetStreamingChatMessageAsync().ConfigureAwait(false))

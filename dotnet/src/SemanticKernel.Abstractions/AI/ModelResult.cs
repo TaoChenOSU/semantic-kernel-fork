@@ -18,11 +18,13 @@ public sealed class ModelResult
     /// Initializes a new instance of the <see cref="ModelResult"/> class with the specified result object.
     /// </summary>
     /// <param name="result">The result object to be stored in the ModelResult instance.</param>
-    public ModelResult(object result)
+    /// <param name="modelId">The ID of the model that produced the result.</param>
+    public ModelResult(object result, string modelId)
     {
         Verify.NotNull(result);
 
         this._result = result;
+        this.ModelId = modelId;
     }
 
     /// <summary>
@@ -30,6 +32,11 @@ public sealed class ModelResult
     /// </summary>
     /// <returns>The raw result object.</returns>
     public object GetRawResult() => this._result;
+
+    /// <summary>
+    /// Gets the ID of the model that produced the result.
+    /// </summary>
+    public string ModelId { get; }
 
     /// <summary>
     /// Gets the result object stored in the <see cref="ModelResult"/> instance, cast to the specified type.

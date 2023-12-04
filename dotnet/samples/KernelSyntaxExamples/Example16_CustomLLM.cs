@@ -176,7 +176,7 @@ public static class Example16_CustomLLM
             Content = LLMResultText,
             Message = "This is my model raw response",
             Tokens = LLMResultText.Split(' ').Length
-        });
+        }, "MyTextCompletion");
 
         public ModelResult ModelResult => this._modelResult;
 

@@ -13,11 +13,11 @@ internal sealed class ChatResult : IChatResult, ITextResult
 {
     private readonly ChatChoice _choice;
 
-    public ChatResult(ChatCompletions resultData, ChatChoice choice)
+    public ChatResult(ChatCompletions resultData, ChatChoice choice, string modelId)
     {
         Verify.NotNull(choice);
         this._choice = choice;
-        this.ModelResult = new(new ChatModelResult(resultData, choice));
+        this.ModelResult = new(new ChatModelResult(resultData, choice), modelId);
     }
 
     public ModelResult ModelResult { get; }

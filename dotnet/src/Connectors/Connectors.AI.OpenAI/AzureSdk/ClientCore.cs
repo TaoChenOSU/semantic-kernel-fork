@@ -123,7 +123,7 @@ internal abstract class ClientCore
 
         this.CaptureUsageDetails(responseData.Usage);
 
-        return responseData.Choices.Select(choice => new TextResult(responseData, choice)).ToList();
+        return responseData.Choices.Select(choice => new TextResult(responseData, choice, this.DeploymentOrModelName)).ToList();
     }
 
     internal async IAsyncEnumerable<T> GetTextStreamingUpdatesAsync<T>(
@@ -256,13 +256,13 @@ internal abstract class ClientCore
             // Or if we are auto-invoking but we somehow end up with other than 1 choice even though only 1 was requested, similarly bail.
             if (!autoInvoke || responseData.Choices.Count != 1)
             {
-                return responseData.Choices.Select(chatChoice => new ChatResult(responseData, chatChoice)).ToList();
+                return responseData.Choices.Select(chatChoice => new ChatResult(responseData, chatChoice, this.DeploymentOrModelName)).ToList();
             }
 
             // Get our single result and extract the function call information. If this isn't a function call, or if it is
             // but we're unable to find the function or extract the relevant information, just return the single result.
             ChatChoice resultChoice = responseData.Choices[0];
-            ChatResult result = new(responseData, resultChoice);
+            ChatResult result = new(responseData, resultChoice, this.DeploymentOrModelName);
             OpenAIFunctionResponse? functionCallResponse = null;
             try
             {

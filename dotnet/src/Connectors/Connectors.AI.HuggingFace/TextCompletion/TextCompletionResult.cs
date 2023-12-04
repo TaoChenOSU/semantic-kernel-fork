@@ -9,8 +9,8 @@ namespace Microsoft.SemanticKernel.Connectors.AI.HuggingFace.TextCompletion;
 
 internal sealed class TextCompletionResult : ITextResult
 {
-    public TextCompletionResult(TextCompletionResponse responseData) =>
-        this.ModelResult = new ModelResult(responseData);
+    public TextCompletionResult(TextCompletionResponse responseData, string modelId) =>
+        this.ModelResult = new ModelResult(responseData, modelId);
 
     public ModelResult ModelResult { get; }
 

@@ -17,7 +17,7 @@ internal sealed class ChatWithDataStreamingResult
 {
     public ModelResult ModelResult { get; }
 
-    public ChatWithDataStreamingResult(ChatWithDataStreamingResponse response, ChatWithDataStreamingChoice choice)
+    public ChatWithDataStreamingResult(ChatWithDataStreamingResponse response, ChatWithDataStreamingChoice choice, string modelId)
     {
         Verify.NotNull(response);
         Verify.NotNull(choice);
@@ -25,7 +25,7 @@ internal sealed class ChatWithDataStreamingResult
         this.ModelResult = new(new ChatWithDataModelResult(response.Id, DateTimeOffset.FromUnixTimeSeconds(response.Created))
         {
             ToolContent = this.GetToolContent(choice)
-        });
+        }, modelId);
 
         this._choice = choice;
     }
