@@ -19,9 +19,9 @@ namespace SemanticKernel.IntegrationTests.Connectors.Memory.Chroma;
 public sealed class ChromaMemoryStoreTests : IDisposable
 {
     // If null, all tests will be enabled
-    private const string SkipReason = "Requires Chroma server up and running";
+    // private const string SkipReason = "Requires Chroma server up and running";
 
-    private const string BaseAddress = "http://localhost:8000";
+    private const string BaseAddress = "http://127.0.0.1:8000";
 
     public ChromaMemoryStoreTests()
     {
@@ -31,7 +31,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this._chromaMemoryStore = new(this._httpClient);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanCreateCollectionsAsync()
     {
         // Arrange
@@ -52,7 +52,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Contains(collectionName3, collections);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanHandleDuplicateNameDuringCollectionCreationAsync()
     {
         // Arrange
@@ -69,7 +69,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Single(filteredCollections);
     }
 
-    [Theory(Skip = SkipReason)]
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task ItCanCheckIfCollectionExistsAsync(bool createCollection)
@@ -89,7 +89,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Equal(createCollection, doesCollectionExist);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanDeleteExistingCollectionAsync()
     {
         // Arrange
@@ -108,7 +108,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.DoesNotContain(collectionName, collectionsAfterDeletion);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItThrowsExceptionOnNonExistentCollectionDeletionAsync()
     {
         // Arrange
@@ -125,7 +125,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
             StringComparison.InvariantCulture);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItReturnsNullOnNonExistentRecordRetrievalAsync()
     {
         // Arrange
@@ -141,7 +141,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Null(record);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanUpsertMemoryRecordAsync()
     {
         // Arrange
@@ -163,7 +163,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord, actualRecord);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanUpsertMemoryRecordBatchAsync()
     {
         // Arrange
@@ -194,7 +194,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord3, actualRecords[2]);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanRemoveMemoryRecordAsync()
     {
         // Arrange
@@ -215,7 +215,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Null(recordAfterDeletion);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanRemoveMemoryRecordBatchAsync()
     {
         // Arrange
@@ -244,7 +244,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Empty(recordsAfterDeletion);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanGetNearestMatchAsync()
     {
         // Arrange
@@ -275,7 +275,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord3, actualRecord);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanGetNearestMatchesAsync()
     {
         // Arrange
@@ -313,7 +313,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord1, actualRecord3);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItReturnsNoMatchesFromEmptyCollectionAsync()
     {
         // Arrange
@@ -329,7 +329,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         Assert.Null(nearestMatch?.Item1);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanUpsertSameMemoryRecordMultipleTimesAsync()
     {
         // Arrange
@@ -351,7 +351,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord, actualRecord);
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public async Task ItCanUpsertDifferentMemoryRecordsWithSameKeyMultipleTimesAsync()
     {
         // Arrange
@@ -378,7 +378,7 @@ public sealed class ChromaMemoryStoreTests : IDisposable
         this.AssertMemoryRecordEqual(expectedRecord2, actualRecord2);
     }
 
-    [Theory(Skip = SkipReason)]
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task ItProcessesBooleanValuesCorrectlyAsync(bool isReference)

@@ -51,11 +51,7 @@ jobs:
         include:
           - { dotnet: "6.0-jammy", os: "ubuntu", configuration: Debug }
           - { dotnet: "7.0-jammy", os: "ubuntu", configuration: Release }
-          - {
-              dotnet: "8.0-jammy",
-              os: "ubuntu",
-              configuration: Release,
-            }
+          - { dotnet: "8.0-jammy", os: "ubuntu", configuration: Release }
           - { dotnet: "6.0", os: "windows", configuration: Release }
           - {
               dotnet: "7.0",
@@ -71,7 +67,12 @@ jobs:
       env:
         NUGET_CERT_REVOCATION_MODE: offline
         GITHUB_ACTIONS: "true"
-
+    services:
+      chroma:
+        # Docker Hub image
+        image: chromadb/chroma:latest
+        ports:
+          - 127.0.0.1:8000:8000
     steps:
       - uses: actions/checkout@v4
 
