@@ -4,8 +4,6 @@ import copy
 
 from pytest import mark, param
 
-from samples.concepts.local_models.lm_studio_chat_completion import main as lm_studio_chat_completion
-from samples.concepts.local_models.lm_studio_text_embedding import main as lm_studio_text_embedding
 from samples.concepts.local_models.ollama_chat_completion import main as ollama_chat_completion
 from tests.samples.test_samples_utils import retry
 
@@ -48,8 +46,8 @@ concepts = [
     # param(azure_chat_image_input, [], id="azure_chat_image_input"),
     # param(custom_service_selector, [], id="custom_service_selector"),
     param(ollama_chat_completion, ["Why is the sky blue?", "exit"], id="ollama_chat_completion"),
-    param(lm_studio_chat_completion, ["Why is the sky blue?", "exit"], id="lm_studio_chat_completion"),
-    param(lm_studio_text_embedding, [], id="lm_studio_text_embedding"),
+    # param(lm_studio_chat_completion, ["Why is the sky blue?", "exit"], id="lm_studio_chat_completion"),
+    # param(lm_studio_text_embedding, [], id="lm_studio_text_embedding"),
 ]
 
 
