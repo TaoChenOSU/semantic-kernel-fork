@@ -33,11 +33,10 @@ jobs:
           cd python
           poetry install --with tests
       - name: Setup Ollama
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ollama/ollama
-          options: -d -v ollama:/root/.ollama -p 11434:11434
-          run: ollama pull phi3
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          ollama pull phi3
       - name: Run samples Tests
         id: run_tests
         shell: bash
