@@ -28,6 +28,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
+      - name: Install dependencies
+        run: |
+          cd python
+          poetry install --with tests
       - name: Setup Ollama
         run: |
           docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
