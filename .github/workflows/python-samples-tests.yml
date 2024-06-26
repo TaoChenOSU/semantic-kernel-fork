@@ -36,7 +36,6 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: ollama/ollama
-          name: ollama
           options: -d -v ollama:/root/.ollama -p 11434:11434
           run: ollama pull phi3
       - name: Run samples Tests

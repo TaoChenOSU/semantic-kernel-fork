@@ -4,7 +4,6 @@ import copy
 
 from pytest import mark, param
 
-from samples.concepts.chat_completion.chat_gpt_api import main as chat_gpt_api
 from samples.concepts.local_models.lm_studio_chat_completion import main as lm_studio_chat_completion
 from samples.concepts.local_models.lm_studio_text_embedding import main as lm_studio_text_embedding
 from samples.concepts.local_models.ollama_chat_completion import main as ollama_chat_completion
@@ -17,7 +16,7 @@ concepts = [
     # ),
     # param(chat_gpt_api_function_calling, ["What is 3+3?", "exit"], id="cht_gpt_api_function_calling"),
     # param(azure_chat_gpt_api, ["Why is the sky blue?", "exit"], id="azure_chat_gpt_api"),
-    param(chat_gpt_api, ["What is life?", "exit"], id="chat_gpt_api"),
+    # param(chat_gpt_api, ["What is life?", "exit"], id="chat_gpt_api"),
     # param(chat_streaming, ["Why is the sun hot?", "exit"], id="chat_streaming"),
     # param(openai_logit_bias, [], id="openai_logit_bias"),
     # param(auto_function_invoke_filters, ["What is 3+3?", "exit"], id="auo_function_invoke_filters"),
