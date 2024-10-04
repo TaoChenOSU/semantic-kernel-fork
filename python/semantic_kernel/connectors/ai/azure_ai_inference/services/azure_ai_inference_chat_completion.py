@@ -15,7 +15,7 @@ from azure.ai.inference.models import (
     AsyncStreamingChatCompletions,
     ChatChoice,
     ChatCompletions,
-    ChatCompletionsFunctionToolCall,
+    ChatCompletionsToolCall,
     ChatRequestMessage,
     StreamingChatChoiceUpdate,
     StreamingChatCompletionsUpdate,
@@ -161,12 +161,15 @@ class AzureAIInferenceChatCompletion(ChatCompletionClientBase, AzureAIInferenceB
         assert isinstance(settings, AzureAIInferenceChatPromptExecutionSettings)  # nosec
 
         assert isinstance(self.client, ChatCompletionsClient)  # nosec
+
         AIInferenceInstrumentor().instrument()
         response: ChatCompletions = await self.client.complete(
             messages=self._prepare_chat_history_for_request(chat_history),
             model_extras=settings.extra_parameters,
             **settings.prepare_settings_dict(),
         )
+        AIInferenceInstrumentor().uninstrument()
+
         response_metadata = self._get_metadata_from_response(response)
 
         return [self._create_chat_message_content(response, choice, response_metadata) for choice in response.choices]
@@ -183,12 +186,15 @@ class AzureAIInferenceChatCompletion(ChatCompletionClientBase, AzureAIInferenceB
         assert isinstance(settings, AzureAIInferenceChatPromptExecutionSettings)  # nosec
 
         assert isinstance(self.client, ChatCompletionsClient)  # nosec
+
+        AIInferenceInstrumentor().instrument()
         response: AsyncStreamingChatCompletions = await self.client.complete(
             stream=True,
             messages=self._prepare_chat_history_for_request(chat_history),
             model_extras=settings.extra_parameters,
             **settings.prepare_settings_dict(),
         )
+        AIInferenceInstrumentor().uninstrument()
 
         async for chunk in response:
             if len(chunk.choices) == 0:
@@ -267,7 +273,7 @@ class AzureAIInferenceChatCompletion(ChatCompletionClientBase, AzureAIInferenceB
             )
         if choice.message.tool_calls:
             for tool_call in choice.message.tool_calls:
-                if isinstance(tool_call, ChatCompletionsFunctionToolCall):
+                if isinstance(tool_call, ChatCompletionsToolCall):
                     items.append(
                         FunctionCallContent(
                             id=tool_call.id,
@@ -316,7 +322,7 @@ class AzureAIInferenceChatCompletion(ChatCompletionClientBase, AzureAIInferenceB
             )
         if choice.delta.tool_calls:
             for tool_call in choice.delta.tool_calls:
-                if isinstance(tool_call, ChatCompletionsFunctionToolCall):
+                if isinstance(tool_call, ChatCompletionsToolCall):
                     items.append(
                         FunctionCallContent(
                             id=tool_call.id,
