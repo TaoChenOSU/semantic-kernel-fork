@@ -21,6 +21,7 @@ from azure.ai.inference.models import (
     StreamingChatCompletionsUpdate,
 )
 from azure.core.credentials import AzureKeyCredential
+from azure.core.tracing.ai.inference import AIInferenceInstrumentor
 from azure.identity import DefaultAzureCredential
 from pydantic import ValidationError
 
@@ -160,6 +161,7 @@ class AzureAIInferenceChatCompletion(ChatCompletionClientBase, AzureAIInferenceB
         assert isinstance(settings, AzureAIInferenceChatPromptExecutionSettings)  # nosec
 
         assert isinstance(self.client, ChatCompletionsClient)  # nosec
+        AIInferenceInstrumentor().instrument()
         response: ChatCompletions = await self.client.complete(
             messages=self._prepare_chat_history_for_request(chat_history),
             model_extras=settings.extra_parameters,

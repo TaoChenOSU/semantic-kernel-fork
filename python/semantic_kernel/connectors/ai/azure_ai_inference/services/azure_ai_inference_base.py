@@ -6,9 +6,12 @@ from abc import ABC
 from typing import ClassVar
 
 from azure.ai.inference.aio import ChatCompletionsClient, EmbeddingsClient
+from azure.core.settings import settings
 
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 from semantic_kernel.utils.experimental_decorator import experimental_class
+
+settings.tracing_implementation = "opentelemetry"
 
 
 @experimental_class
