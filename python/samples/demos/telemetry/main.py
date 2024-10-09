@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import os
 from typing import Literal
 
 from azure.monitor.opentelemetry.exporter import (
@@ -39,6 +40,9 @@ resource = Resource.create({ResourceAttributes.SERVICE_NAME: "TelemetryExample"}
 
 # Define the scenarios that can be run
 SCENARIOS = ["ai_service", "kernel_function", "auto_function_invocation", "all"]
+
+# enable content tracing for Azure AI Inference API
+os.environ["AZUREAI_INFERENCE_API_ENABLE_CONTENT_TRACING"] = "true"
 
 
 def set_up_logging():
