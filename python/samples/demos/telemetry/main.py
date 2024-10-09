@@ -42,7 +42,7 @@ resource = Resource.create({ResourceAttributes.SERVICE_NAME: "TelemetryExample"}
 SCENARIOS = ["ai_service", "kernel_function", "auto_function_invocation", "all"]
 
 # enable content tracing for Azure AI Inference API
-os.environ["AZUREAI_INFERENCE_API_ENABLE_CONTENT_TRACING"] = "true"
+os.environ["AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED"] = "true"
 
 
 def set_up_logging():
