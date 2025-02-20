@@ -35,7 +35,7 @@ tracer: Tracer = get_tracer(__name__)
 class ChatCompletionClientBase(AIServiceClientBase, ABC):
     """Base class for chat completion AI services."""
 
-    # Connectors that support function calling should set this to True
+    # Connectors that support function calling should set this to True test
     SUPPORTS_FUNCTION_CALLING: ClassVar[bool] = False
     instruction_role: str = Field(default_factory=lambda: "system", description="The role for instructions.")
 
