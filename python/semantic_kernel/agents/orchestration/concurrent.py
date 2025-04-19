@@ -5,7 +5,6 @@ import inspect
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from autogen_core import AgentId, AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
 from typing_extensions import TypeVar
@@ -43,36 +42,19 @@ class ConcurrentResultMessage(KernelBaseModel):
     body: dict[str, ChatMessageContent]
 
 
-TExternalInputMessage = TypeVar("TExternalInputMessage", default=ConcurrentRequestMessage)
-TExternalOutputMessage = TypeVar("TExternalOutputMessage", default=ConcurrentResultMessage)
+TExternalIn = TypeVar("TExternalIn", default=ConcurrentRequestMessage)
+TExternalOut = TypeVar("TExternalOut", default=ConcurrentResultMessage)
 
 
 class ConcurrentOrchestrationActor(
     OrchestrationActorBase[
-        TExternalInputMessage,
+        TExternalIn,
         ConcurrentRequestMessage,
         ConcurrentResultMessage,
-        TExternalOutputMessage,
-    ]
+        TExternalOut,
+    ],
 ):
     """An agent that is part of the orchestration that is responsible for relaying external messages."""
-
-    @override
-    async def on_message_impl(self, message: Any, ctx: MessageContext) -> None:
-        if isinstance(message, ConcurrentRequestMessage):
-            await self._handle_orchestration_input_message(message, ctx)
-        elif isinstance(message, self._external_input_message_type):
-            if inspect.isawaitable(self._input_transition):
-                transition_message: ConcurrentRequestMessage = await self._input_transition(message)
-            else:
-                transition_message: ConcurrentRequestMessage = self._input_transition(message)  # type: ignore[no-redef]
-            await self._handle_orchestration_input_message(transition_message, ctx)
-        elif isinstance(message, ConcurrentResultMessage):
-            await self._handle_orchestration_output_message(message, ctx)
-        else:
-            # Since the orchestration actor subscribes to the external topic type,
-            # it may receive messages that are not of the expected type.
-            pass
 
     @override
     async def _handle_orchestration_input_message(
@@ -94,9 +76,9 @@ class ConcurrentOrchestrationActor(
         logger.debug(f"{self.id}: Received orchestration output message.")
 
         if inspect.isawaitable(self._output_transition):
-            external_output_message: TExternalOutputMessage = await self._output_transition(message)
+            external_output_message: TExternalOut = await self._output_transition(message)
         else:
-            external_output_message: TExternalOutputMessage = self._output_transition(message)  # type: ignore[no-redef]
+            external_output_message: TExternalOut = self._output_transition(message)  # type: ignore[no-redef]
 
         if self._external_topic_type:
             logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
@@ -170,35 +152,27 @@ class CollectionActor(RoutedAgent):
 
 class ConcurrentOrchestration(
     OrchestrationBase[
-        TExternalInputMessage,
+        TExternalIn,
         ConcurrentRequestMessage,
         ConcurrentResultMessage,
-        TExternalOutputMessage,
-    ]
+        TExternalOut,
+    ],
 ):
     """A concurrent multi-agent pattern orchestration."""
 
     def __init__(
         self,
         workers: list[Agent | OrchestrationBase],
-        external_input_message_type: type[TExternalInputMessage] = ConcurrentRequestMessage,  # type: ignore[assignment]
         name: str | None = None,
         description: str | None = None,
-        input_transition: Callable[
-            [TExternalInputMessage], Awaitable[ConcurrentRequestMessage] | ConcurrentRequestMessage
-        ]
+        input_transition: Callable[[TExternalIn], Awaitable[ConcurrentRequestMessage] | ConcurrentRequestMessage]
         | None = None,
-        output_transition: Callable[
-            [ConcurrentResultMessage], Awaitable[TExternalOutputMessage] | TExternalOutputMessage
-        ]
-        | None = None,
+        output_transition: Callable[[ConcurrentResultMessage], Awaitable[TExternalOut] | TExternalOut] | None = None,
     ) -> None:
         """Initialize the orchestration base.
 
         Args:
             workers (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
-            external_input_message_type (type[TExternalInputMessage]): The type of the external input message.
-                This is for dynamic type checking. Default is ConcurrentRequestMessage.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transition (Callable): A function that transforms the external input message to the internal
@@ -208,7 +182,6 @@ class ConcurrentOrchestration(
         """
         super().__init__(
             workers,
-            external_input_message_type,
             name=name,
             description=description,
             input_transition=input_transition,
@@ -241,7 +214,7 @@ class ConcurrentOrchestration(
         internal_topic_type: str,
         external_topic_type: str | None = None,
         direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOutputMessage], None] | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
     ) -> str:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await asyncio.gather(*[
@@ -274,15 +247,14 @@ class ConcurrentOrchestration(
         internal_topic_type: str,
         external_topic_type: str | None = None,
         direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOutputMessage], None] | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
     ) -> None:
         """Register the orchestration actor."""
-        await ConcurrentOrchestrationActor.register(
+        await ConcurrentOrchestrationActor[self.t_external_in, self.t_external_in].register(
             runtime,
             self._get_orchestration_actor_type(internal_topic_type),
-            lambda: ConcurrentOrchestrationActor(
+            lambda: ConcurrentOrchestrationActor[self.t_external_in, self.t_external_in](
                 internal_topic_type,
-                external_input_message_type=self._external_input_message_type,
                 input_transition=self._input_transition,
                 output_transition=self._output_transition,
                 external_topic_type=external_topic_type,

@@ -58,7 +58,6 @@ def get_sequential_orchestration(
 
     return SequentialOrchestration[ConcurrentRequestMessage, ConcurrentResponseMessage](
         workers=[expert_agent, translation_agent],
-        external_input_message_type=ConcurrentRequestMessage,
         input_transition=input_transition_func,
         output_transition=output_transition_func,
     )

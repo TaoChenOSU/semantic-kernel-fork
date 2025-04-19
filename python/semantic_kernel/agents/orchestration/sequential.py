@@ -4,7 +4,7 @@ import inspect
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any, Union
+from typing import Union
 
 from autogen_core import AgentId, AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
 from typing_extensions import TypeVar
@@ -36,42 +36,35 @@ class SequentialResultMessage(KernelBaseModel):
     body: ChatMessageContent
 
 
-TExternalInputMessage = TypeVar("TExternalInputMessage", default=SequentialRequestMessage)
-TExternalOutputMessage = TypeVar("TExternalOutputMessage", default=SequentialResultMessage)
+TExternalIn = TypeVar("TExternalIn", default=SequentialRequestMessage)
+TExternalOut = TypeVar("TExternalOut", default=SequentialResultMessage)
 
 
 class SequentialOrchestrationActor(
     OrchestrationActorBase[
-        TExternalInputMessage,
+        TExternalIn,
         SequentialRequestMessage,
         SequentialResultMessage,
-        TExternalOutputMessage,
-    ]
+        TExternalOut,
+    ],
 ):
     """An agent that is part of the orchestration that is responsible for relaying external messages."""
 
     def __init__(
         self,
         internal_topic_type: str,
-        external_input_message_type: type[TExternalInputMessage],
-        input_transition: Callable[
-            [TExternalInputMessage], Awaitable[SequentialRequestMessage] | SequentialRequestMessage
-        ],
-        output_transition: Callable[
-            [SequentialResultMessage], Awaitable[TExternalOutputMessage] | TExternalOutputMessage
-        ],
+        input_transition: Callable[[TExternalIn], Awaitable[SequentialRequestMessage] | SequentialRequestMessage],
+        output_transition: Callable[[SequentialResultMessage], Awaitable[TExternalOut] | TExternalOut],
         *,
         initial_actor_type: str,
         external_topic_type: str | None = None,
         direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOutputMessage], None] | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
     ) -> None:
         """Initialize the orchestration agent.
 
         Args:
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
-            external_input_message_type (type[TExternalInputMessage]): The type of the external input message.
-                This is for dynamic type checking.
             input_transition (Callable): A function that transforms the external input message to the internal
                 input message.
             output_transition (Callable): A function that transforms the internal output message to the external
@@ -86,30 +79,12 @@ class SequentialOrchestrationActor(
 
         super().__init__(
             internal_topic_type=internal_topic_type,
-            external_input_message_type=external_input_message_type,
             input_transition=input_transition,
             output_transition=output_transition,
             external_topic_type=external_topic_type,
             direct_actor_type=direct_actor_type,
             result_callback=result_callback,
         )
-
-    @override
-    async def on_message_impl(self, message: Any, ctx: MessageContext) -> None:
-        if isinstance(message, SequentialRequestMessage):
-            await self._handle_orchestration_input_message(message, ctx)
-        elif isinstance(message, self._external_input_message_type):
-            if inspect.isawaitable(self._input_transition):
-                transition_message: SequentialRequestMessage = await self._input_transition(message)
-            else:
-                transition_message: SequentialRequestMessage = self._input_transition(message)  # type: ignore[no-redef]
-            await self._handle_orchestration_input_message(transition_message, ctx)
-        elif isinstance(message, SequentialResultMessage):
-            await self._handle_orchestration_output_message(message, ctx)
-        else:
-            # Since the orchestration actor subscribes to the external topic type,
-            # it may receive messages that are not of the expected type.
-            pass
 
     @override
     async def _handle_orchestration_input_message(
@@ -131,9 +106,9 @@ class SequentialOrchestrationActor(
         logger.debug(f"{self.id}: Received orchestration output message.")
 
         if inspect.isawaitable(self._output_transition):
-            external_output_message: TExternalOutputMessage = await self._output_transition(message)
+            external_output_message: TExternalOut = await self._output_transition(message)
         else:
-            external_output_message: TExternalOutputMessage = self._output_transition(message)  # type: ignore[no-redef]
+            external_output_message: TExternalOut = self._output_transition(message)  # type: ignore[no-redef]
 
         if self._external_topic_type:
             logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
@@ -199,35 +174,27 @@ class CollectionActor(RoutedAgent):
 
 class SequentialOrchestration(
     OrchestrationBase[
-        TExternalInputMessage,
+        TExternalIn,
         SequentialRequestMessage,
         SequentialResultMessage,
-        TExternalOutputMessage,
-    ]
+        TExternalOut,
+    ],
 ):
     """A sequential multi-agent pattern orchestration."""
 
     def __init__(
         self,
         workers: list[Union[Agent, "OrchestrationBase"]],
-        external_input_message_type: type[TExternalInputMessage] = SequentialRequestMessage,  # type: ignore[assignment]
         name: str | None = None,
         description: str | None = None,
-        input_transition: Callable[
-            [TExternalInputMessage], Awaitable[SequentialRequestMessage] | SequentialRequestMessage
-        ]
+        input_transition: Callable[[TExternalIn], Awaitable[SequentialRequestMessage] | SequentialRequestMessage]
         | None = None,
-        output_transition: Callable[
-            [SequentialResultMessage], Awaitable[TExternalOutputMessage] | TExternalOutputMessage
-        ]
-        | None = None,
+        output_transition: Callable[[SequentialResultMessage], Awaitable[TExternalOut] | TExternalOut] | None = None,
     ) -> None:
         """Initialize the orchestration base.
 
         Args:
             workers (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
-            external_input_message_type (type[TExternalInputMessage]): The type of the external input message.
-                This is for dynamic type checking. Default is SequentialRequestMessage.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transition (Callable): A function that transforms the external input message to the internal
@@ -237,7 +204,6 @@ class SequentialOrchestration(
         """
         super().__init__(
             workers,
-            external_input_message_type,
             name=name,
             description=description,
             input_transition=input_transition,
@@ -270,7 +236,7 @@ class SequentialOrchestration(
         internal_topic_type: str,
         external_topic_type: str | None = None,
         direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOutputMessage], None] | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
     ) -> str:
         """Register the actors and orchestrations with the runtime and add the required subscriptions.
 
@@ -307,15 +273,14 @@ class SequentialOrchestration(
         initial_actor_type: str,
         external_topic_type: str | None = None,
         direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOutputMessage], None] | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
     ) -> None:
         """Register the orchestration actor."""
-        await SequentialOrchestrationActor.register(
+        await SequentialOrchestrationActor[self.t_external_in, self.t_external_in].register(
             runtime,
             self._get_orchestration_actor_type(internal_topic_type),
-            lambda: SequentialOrchestrationActor(
+            lambda: SequentialOrchestrationActor[self.t_external_in, self.t_external_in](
                 internal_topic_type,
-                self._external_input_message_type,
                 self._input_transition,
                 self._output_transition,
                 initial_actor_type=initial_actor_type,
