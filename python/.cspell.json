@@ -47,6 +47,7 @@
         "logit",
         "logprobs",
         "Magentic",
+        "lowlevel",
         "mistralai",
         "mongocluster",
         "nd",
