@@ -31,7 +31,7 @@ async def main():
     )
 
     concurrent_pattern = ConcurrentOrchestration(
-        workers=[physics_agent, chemistry_agent],
+        members=[physics_agent, chemistry_agent],
     )
 
     runtime = SingleThreadedAgentRuntime()

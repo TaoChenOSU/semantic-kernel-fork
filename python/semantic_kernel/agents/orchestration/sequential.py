@@ -6,7 +6,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import Union
 
-from autogen_core import AgentId, AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
+from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
 from typing_extensions import TypeVar
 
 from semantic_kernel.agents.agent import Agent
@@ -95,7 +95,8 @@ class SequentialOrchestrationActor(
     ) -> None:
         logger.debug(f"{self.id}: Received orchestration input message.")
         logger.debug(f"Relaying message to agent: {self._initial_actor_type}")
-        await self.send_message(message, AgentId(type=self._initial_actor_type, key="default"))
+        target_actor_id = await self.runtime.get(self._initial_actor_type)
+        await self.send_message(message, target_actor_id)
 
     @override
     async def _handle_orchestration_output_message(
@@ -114,14 +115,12 @@ class SequentialOrchestrationActor(
             logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
             await self.publish_message(
                 external_output_message,
-                TopicId(self._external_topic_type, "default"),
+                TopicId(self._external_topic_type, self.id.key),
             )
         if self._direct_actor_type:
             logger.debug(f"Relaying message directly to actor: {self._direct_actor_type}")
-            await self.send_message(
-                external_output_message,
-                AgentId(self._direct_actor_type, "default"),
-            )
+            target_actor_id = await self.runtime.get(self._direct_actor_type)
+            await self.send_message(external_output_message, target_actor_id)
         if self._result_callback:
             self._result_callback(external_output_message)
 
@@ -129,10 +128,10 @@ class SequentialOrchestrationActor(
 class SequentialAgentActor(AgentActorBase):
     """A agent actor for sequential agents that process tasks."""
 
-    def __init__(self, agent: Agent, next_agent_type: str) -> None:
+    def __init__(self, agent: Agent, internal_topic_type: str, next_agent_type: str) -> None:
         """Initialize the agent actor."""
         self._next_agent_type = next_agent_type
-        super().__init__(agent=agent)
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
 
     @message_handler
     async def _handle_message(self, message: SequentialRequestMessage, ctx: MessageContext) -> None:
@@ -143,13 +142,8 @@ class SequentialAgentActor(AgentActorBase):
 
         logger.debug(f"Sequential actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 
-        await self.send_message(
-            SequentialRequestMessage(body=response.message),
-            AgentId(
-                type=self._next_agent_type,
-                key="default",
-            ),
-        )
+        target_actor_id = await self.runtime.get(self._next_agent_type)
+        await self.send_message(SequentialRequestMessage(body=response.message), target_actor_id)
 
 
 class CollectionActor(RoutedAgent):
@@ -163,13 +157,8 @@ class CollectionActor(RoutedAgent):
 
     @message_handler
     async def _handle_message(self, message: SequentialRequestMessage, ctx: MessageContext) -> None:
-        await self.send_message(
-            SequentialResultMessage(body=message.body),
-            AgentId(
-                type=self._orchestration_agent_type,
-                key="default",
-            ),
-        )
+        target_actor_id = await self.runtime.get(self._orchestration_agent_type)
+        await self.send_message(SequentialResultMessage(body=message.body), target_actor_id)
 
 
 class SequentialOrchestration(
@@ -184,7 +173,7 @@ class SequentialOrchestration(
 
     def __init__(
         self,
-        workers: list[Union[Agent, "OrchestrationBase"]],
+        members: list[Union[Agent, "OrchestrationBase"]],
         name: str | None = None,
         description: str | None = None,
         input_transition: Callable[[TExternalIn], Awaitable[SequentialRequestMessage] | SequentialRequestMessage]
@@ -194,7 +183,7 @@ class SequentialOrchestration(
         """Initialize the orchestration base.
 
         Args:
-            workers (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
+            members (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transition (Callable): A function that transforms the external input message to the internal
@@ -203,7 +192,7 @@ class SequentialOrchestration(
                 output message.
         """
         super().__init__(
-            workers,
+            members,
             name=name,
             description=description,
             input_transition=input_transition,
@@ -221,13 +210,8 @@ class SequentialOrchestration(
         if isinstance(task, ChatMessageContent):
             message = SequentialRequestMessage(body=task)
 
-        await runtime.send_message(
-            message,
-            AgentId(
-                type=self._get_orchestration_actor_type(internal_topic_type),
-                key="default",
-            ),
-        )
+        target_actor_id = await runtime.get(self._get_orchestration_actor_type(internal_topic_type))
+        await runtime.send_message(message, target_actor_id)
 
     @override
     async def _prepare(
@@ -252,7 +236,7 @@ class SequentialOrchestration(
         Returns:
             str: The actor type of the orchestration so that external actors can send messages to it.
         """
-        initial_actor_type = await self._register_workers(runtime, internal_topic_type)
+        initial_actor_type = await self._register_members(runtime, internal_topic_type)
         await self._register_orchestration_actor(
             runtime,
             internal_topic_type,
@@ -290,14 +274,14 @@ class SequentialOrchestration(
             ),
         )
 
-    async def _register_workers(
+    async def _register_members(
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
     ) -> str:
-        """Register the workers.
+        """Register the members.
 
-        The workers will be registered in the reverse order so that the actor type of the next worker
+        The members will be registered in the reverse order so that the actor type of the next worker
         is available when the current worker is registered. This is important for the sequential
         orchestration, where actors need to know its next actor type to send the message to.
 
@@ -309,13 +293,14 @@ class SequentialOrchestration(
             str: The first actor type in the sequence.
         """
         next_actor_type = self._get_collection_actor_type(internal_topic_type)
-        for index, worker in enumerate(reversed(self._workers)):
+        for index, worker in enumerate(reversed(self._members)):
             if isinstance(worker, Agent):
                 await SequentialAgentActor.register(
                     runtime,
                     self._get_agent_actor_type(worker, internal_topic_type),
                     lambda worker=worker, next_actor_type=next_actor_type: SequentialAgentActor(  # type: ignore[misc]
                         worker,
+                        internal_topic_type,
                         next_agent_type=next_actor_type,
                     ),
                 )

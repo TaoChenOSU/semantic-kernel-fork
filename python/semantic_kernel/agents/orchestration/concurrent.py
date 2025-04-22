@@ -6,7 +6,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentId, AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
+from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
 from typing_extensions import TypeVar
 
 from semantic_kernel.agents.agent import Agent
@@ -65,7 +65,10 @@ class ConcurrentOrchestrationActor(
     ) -> None:
         logger.debug(f"{self.id}: Received orchestration input message.")
         logger.debug(f"Broadcasting message to topic {self._internal_topic_type}.")
-        await self.publish_message(message, TopicId(self._internal_topic_type, "default"))
+        await self.publish_message(
+            message,
+            TopicId(self._internal_topic_type, self.id.key),
+        )
 
     @override
     async def _handle_orchestration_output_message(
@@ -84,14 +87,12 @@ class ConcurrentOrchestrationActor(
             logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
             await self.publish_message(
                 external_output_message,
-                TopicId(self._external_topic_type, "default"),
+                TopicId(self._external_topic_type, self.id.key),
             )
         if self._direct_actor_type:
             logger.debug(f"Relaying message directly to actor: {self._direct_actor_type}")
-            await self.send_message(
-                external_output_message,
-                AgentId(self._direct_actor_type, "default"),
-            )
+            target_actor_id = await self.runtime.get(self._direct_actor_type)
+            await self.send_message(external_output_message, target_actor_id)
         if self._result_callback:
             self._result_callback(external_output_message)
 
@@ -99,10 +100,10 @@ class ConcurrentOrchestrationActor(
 class ConcurrentAgentActor(AgentActorBase):
     """A agent actor for concurrent agents that process tasks."""
 
-    def __init__(self, agent: Agent, collection_agent_type: str) -> None:
+    def __init__(self, agent: Agent, internal_topic_type: str, collection_agent_type: str) -> None:
         """Initialize the agent actor."""
         self._collection_agent_type = collection_agent_type
-        super().__init__(agent=agent)
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
 
     @message_handler
     async def _handle_message(self, message: ConcurrentRequestMessage, ctx: MessageContext) -> None:
@@ -113,13 +114,8 @@ class ConcurrentAgentActor(AgentActorBase):
 
         logger.debug(f"Concurrent actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 
-        await self.send_message(
-            ConcurrentResponseMessage(body=response.message),
-            AgentId(
-                type=self._collection_agent_type,
-                key="default",
-            ),
-        )
+        target_actor_id = await self.runtime.get(self._collection_agent_type)
+        await self.send_message(ConcurrentResponseMessage(body=response.message), target_actor_id)
 
 
 class CollectionActor(RoutedAgent):
@@ -141,13 +137,8 @@ class CollectionActor(RoutedAgent):
 
         if len(self._results) == self._expected_answer_count:
             logger.debug(f"Collection actor (Actor ID: {self.id}) finished processing all responses.")
-            await self.send_message(
-                ConcurrentResultMessage(body=self._results),
-                AgentId(
-                    type=self._orchestration_actor_type,
-                    key="default",
-                ),
-            )
+            target_actor_id = await self.runtime.get(self._orchestration_actor_type)
+            await self.send_message(ConcurrentResultMessage(body=self._results), target_actor_id)
 
 
 class ConcurrentOrchestration(
@@ -162,7 +153,7 @@ class ConcurrentOrchestration(
 
     def __init__(
         self,
-        workers: list[Agent | OrchestrationBase],
+        members: list[Agent | OrchestrationBase],
         name: str | None = None,
         description: str | None = None,
         input_transition: Callable[[TExternalIn], Awaitable[ConcurrentRequestMessage] | ConcurrentRequestMessage]
@@ -172,7 +163,7 @@ class ConcurrentOrchestration(
         """Initialize the orchestration base.
 
         Args:
-            workers (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
+            members (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transition (Callable): A function that transforms the external input message to the internal
@@ -181,7 +172,7 @@ class ConcurrentOrchestration(
                 output message.
         """
         super().__init__(
-            workers,
+            members,
             name=name,
             description=description,
             input_transition=input_transition,
@@ -199,13 +190,8 @@ class ConcurrentOrchestration(
         if isinstance(task, ChatMessageContent):
             message = ConcurrentRequestMessage(body=task)
 
-        await runtime.send_message(
-            message,
-            AgentId(
-                type=self._get_orchestration_actor_type(internal_topic_type),
-                key="default",
-            ),
-        )
+        target_actor_id = await runtime.get(self._get_orchestration_actor_type(internal_topic_type))
+        await runtime.send_message(message, target_actor_id)
 
     @override
     async def _prepare(
@@ -225,7 +211,7 @@ class ConcurrentOrchestration(
                 direct_actor_type=direct_actor_type,
                 result_callback=result_callback,
             ),
-            self._register_workers(
+            self._register_members(
                 runtime,
                 internal_topic_type,
             ),
@@ -263,12 +249,12 @@ class ConcurrentOrchestration(
             ),
         )
 
-    async def _register_workers(
+    async def _register_members(
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
     ) -> None:
-        """Register the workers."""
+        """Register the members."""
 
         async def _internal_helper(worker: Agent | OrchestrationBase) -> None:
             if isinstance(worker, Agent):
@@ -277,6 +263,7 @@ class ConcurrentOrchestration(
                     self._get_agent_actor_type(worker, internal_topic_type),
                     lambda agent=worker: ConcurrentAgentActor(  # type: ignore[misc]
                         agent,
+                        internal_topic_type,
                         collection_agent_type=self._get_collection_actor_type(internal_topic_type),
                     ),
                 )
@@ -287,7 +274,7 @@ class ConcurrentOrchestration(
                     direct_actor_type=self._get_collection_actor_type(internal_topic_type),
                 )
 
-        await asyncio.gather(*[_internal_helper(worker) for worker in self._workers])
+        await asyncio.gather(*[_internal_helper(worker) for worker in self._members])
 
     async def _register_collection_actor(
         self,
@@ -299,7 +286,7 @@ class ConcurrentOrchestration(
             self._get_collection_actor_type(internal_topic_type),
             lambda: CollectionActor(
                 description="An internal agent that is responsible for collection results",
-                expected_answer_count=len(self._workers),
+                expected_answer_count=len(self._members),
                 orchestration_actor_type=self._get_orchestration_actor_type(internal_topic_type),
             ),
         )
@@ -316,7 +303,7 @@ class ConcurrentOrchestration(
                     self._get_agent_actor_type(agent, internal_topic_type),
                 )
             )
-            for agent in self._workers
+            for agent in self._members
             if isinstance(
                 agent, Agent
             )  # Only register agent actors since orchestrations will add their own subscriptions

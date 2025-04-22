@@ -193,7 +193,7 @@ class OrchestrationBase(
 
     def __init__(
         self,
-        workers: list[Union[Agent, "OrchestrationBase"]],
+        members: list[Union[Agent, "OrchestrationBase"]],
         name: str | None = None,
         description: str | None = None,
         input_transition: Callable[[TExternalIn], Awaitable[TInternalIn] | TInternalIn] | None = None,
@@ -202,7 +202,7 @@ class OrchestrationBase(
         """Initialize the orchestration base.
 
         Args:
-            workers (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
+            members (list[Union[Agent, OrchestrationBase]]): The list of agents or orchestrations to be used.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transition (Callable | None):  function that transforms the external input message to the
@@ -231,7 +231,7 @@ class OrchestrationBase(
         else:
             self._output_transition = output_transition  # type: ignore[assignment]
 
-        self._workers = workers
+        self._members = members
 
     def _set_types(self) -> None:
         """Set the external input and output types from the class arguments.

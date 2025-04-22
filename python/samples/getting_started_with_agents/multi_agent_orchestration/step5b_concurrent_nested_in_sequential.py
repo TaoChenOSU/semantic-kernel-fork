@@ -81,7 +81,7 @@ def get_expert_concurrent_orchestration() -> ConcurrentOrchestration[SequentialR
         )
 
     return ConcurrentOrchestration[SequentialRequestMessage, SequentialResultMessage](
-        workers=[
+        members=[
             system_architect_agent,
             database_expert_agent,
             security_expert_agent,
@@ -136,7 +136,7 @@ def get_mermaid_concurrent_orchestration() -> ConcurrentOrchestration[
         )
 
     return ConcurrentOrchestration[SequentialRequestMessage, SequentialResultMessage](
-        workers=[dotnet_mermaid_agent, python_mermaid_agent],
+        members=[dotnet_mermaid_agent, python_mermaid_agent],
         input_transition=input_transition_func,
         output_transition=output_transition_func,
     )
@@ -158,7 +158,7 @@ async def main():
     )
 
     sequential_orchestration = SequentialOrchestration(
-        workers=[
+        members=[
             expert_concurrent_orchstration,
             enginnering_lead,
             mermaid_concurrent_orchestration,

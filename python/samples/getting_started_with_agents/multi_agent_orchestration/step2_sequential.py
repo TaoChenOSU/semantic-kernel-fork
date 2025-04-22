@@ -49,7 +49,7 @@ async def main():
     )
 
     sequential_pattern = SequentialOrchestration(
-        workers=[
+        members=[
             concept_extractor_agent,
             writer_agent,
             format_proof_agent,

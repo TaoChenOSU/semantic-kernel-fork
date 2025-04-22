@@ -57,7 +57,7 @@ def get_sequential_orchestration(
         )
 
     return SequentialOrchestration[ConcurrentRequestMessage, ConcurrentResponseMessage](
-        workers=[expert_agent, translation_agent],
+        members=[expert_agent, translation_agent],
         input_transition=input_transition_func,
         output_transition=output_transition_func,
     )
@@ -88,7 +88,7 @@ async def main():
     chemistry_sequential = get_sequential_orchestration(chemistry_agent, target_language="Spanish")
 
     concurrent_pattern = ConcurrentOrchestration(
-        workers=[
+        members=[
             physics_sequential,
             chemistry_sequential,
             chinese_physics_agent,
