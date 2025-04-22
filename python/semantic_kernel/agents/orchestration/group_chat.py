@@ -1,24 +1,21 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import inspect
 import logging
 import sys
-import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
 from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
-from pydantic import Field
+from typing_extensions import TypeVar
 
 from semantic_kernel.agents.agent import Agent, AgentThread
-from semantic_kernel.agents.orchestration.agent_actor_base import ContainerBase
-from semantic_kernel.agents.orchestration.orchestration_base import OrchestrationBase, OrchestrationResultMessage
-from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
+from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
+from semantic_kernel.agents.orchestration.orchestration_base import OrchestrationActorBase, OrchestrationBase
 from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
-from semantic_kernel.functions.kernel_arguments import KernelArguments
-from semantic_kernel.kernel import Kernel
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
 if sys.version_info >= (3, 12):
@@ -30,10 +27,22 @@ else:
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+class GroupChatStartMessage(KernelBaseModel):
+    """A message to start a group chat."""
+
+    body: ChatMessageContent
+
+
+class GroupChatEndMessage(KernelBaseModel):
+    """A message to end a group chat."""
+
+    body: ChatMessageContent
+
+
 class GroupChatRequestMessage(KernelBaseModel):
     """A request message type for agents in a group chat."""
 
-    pass
+    agent_name: str
 
 
 class GroupChatResponseMessage(KernelBaseModel):
@@ -48,63 +57,128 @@ class GroupChatResetMessage(KernelBaseModel):
     pass
 
 
-class GroupChatAgentContainer(ContainerBase):
-    """A agent container for agents that process messages in a group chat."""
+TExternalIn = TypeVar("TExternalIn", default=GroupChatStartMessage)
+TExternalOut = TypeVar("TExternalOut", default=GroupChatEndMessage)
 
-    chat_history: ChatHistory = Field(
-        default_factory=ChatHistory, description="Temporary message storage between invocations."
-    )
-    agent_thread: AgentThread | None = None
+
+class GroupChatOrchestrationActor(
+    OrchestrationActorBase[
+        TExternalIn,
+        GroupChatStartMessage,
+        GroupChatEndMessage,
+        TExternalOut,
+    ],
+):
+    """An agent that is part of the orchestration that is responsible for relaying external messages."""
+
+    @override
+    async def _handle_orchestration_input_message(
+        self,
+        # The following does not validate LSP because Python doesn't recognize the generic type
+        message: GroupChatStartMessage,  # type: ignore
+        ctx: MessageContext,
+    ) -> None:
+        logger.debug(f"{self.id}: Received orchestration input message.")
+        await self.publish_message(
+            GroupChatResponseMessage(body=message.body),
+            TopicId(self._internal_topic_type, self.id.key),
+        )
+
+    @override
+    async def _handle_orchestration_output_message(
+        self,
+        message: GroupChatEndMessage,
+        ctx: MessageContext,
+    ) -> None:
+        logger.debug(f"{self.id}: Received orchestration output message.")
+        if inspect.isawaitable(self._output_transition):
+            external_output_message: TExternalOut = await self._output_transition(message)
+        else:
+            external_output_message: TExternalOut = self._output_transition(message)  # type: ignore[no-redef]
+
+        if self._external_topic_type:
+            logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
+            await self.publish_message(
+                external_output_message,
+                TopicId(self._external_topic_type, self.id.key),
+            )
+        if self._direct_actor_type:
+            logger.debug(f"Relaying message directly to actor: {self._direct_actor_type}")
+            target_actor_id = await self.runtime.get(self._direct_actor_type)
+            await self.send_message(external_output_message, target_actor_id)
+        if self._result_callback:
+            self._result_callback(external_output_message)
+
+
+class GroupChatAgentActor(AgentActorBase):
+    """An agent actor that process messages in a group chat."""
+
+    def __init__(self, agent: Agent, internal_topic_type: str):
+        """Initialize the group chat agent container."""
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
+
+        self._agent_thread: AgentThread | None = None
+        # Chat history to temporarily store messages before the agent thread is created
+        self._chat_history = ChatHistory()
 
     @message_handler
     async def _on_group_chat_reset(self, message: GroupChatResetMessage, ctx: MessageContext) -> None:
-        self.chat_history.clear()
-        if self.agent_thread:
-            await self.agent_thread.delete()
-            self.agent_thread = None
-        else:
-            logger.warning("Non-existent agent thread cannot be deleted.")
+        self._chat_history.clear()
+        if self._agent_thread:
+            await self._agent_thread.delete()
+            self._agent_thread = None
 
     @message_handler
     async def _on_group_chat_message(self, message: GroupChatResponseMessage, ctx: MessageContext) -> None:
-        if message.body.role != AuthorRole.USER:
-            self.chat_history.add_message(
-                ChatMessageContent(
-                    role=AuthorRole.USER,
-                    content=f"Transferred to {message.body.name}",
+        logger.debug(f"{self.id}: Received group chat response message.")
+        if self._agent_thread is not None:
+            if message.body.role != AuthorRole.USER:
+                await self._agent_thread.on_new_message(
+                    ChatMessageContent(
+                        role=AuthorRole.USER,
+                        content=f"Transferred to {message.body.name}",
+                    )
                 )
-            )
-        self.chat_history.add_message(message.body)
+            await self._agent_thread.on_new_message(message.body)
+        else:
+            if message.body.role != AuthorRole.USER:
+                self._chat_history.add_message(
+                    ChatMessageContent(
+                        role=AuthorRole.USER,
+                        content=f"Transferred to {message.body.name}",
+                    )
+                )
+            self._chat_history.add_message(message.body)
 
     @message_handler
-    async def _on_request_to_speak(self, message: GroupChatRequestMessage, ctx: MessageContext) -> None:
-        """Handle a message."""
-        if not self.agent:
-            raise RuntimeError("Agent not set for the container. Please provide an agent or override this method.")
+    async def _handle_request_message(self, message: GroupChatRequestMessage, ctx: MessageContext) -> None:
+        if message.agent_name != self._agent.name:
+            return
 
-        logger.debug(
-            f"Group chat container (Container ID: {self.id}; Agent name: {self.agent.name}) started processing..."
-        )
-
-        # Add a user message to steer the agent to respond more closely to the instructions.
-        self.chat_history.add_message(
-            ChatMessageContent(
-                role=AuthorRole.USER,
-                content=f"Transferred to {self.agent.name}, adopt the persona immediately.",
+        logger.debug(f"{self.id}: Received group chat request message.")
+        if self._agent_thread is None:
+            # Add a user message to steer the agent to respond more closely to the instructions.
+            self._chat_history.add_message(
+                ChatMessageContent(
+                    role=AuthorRole.USER,
+                    content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
+                )
             )
-        )
-        response = await self.agent.get_response(messages=self.chat_history.messages, thread=self.agent_thread)
+            response_item = await self._agent.get_response(messages=self._chat_history.messages)
+            self._agent_thread = response_item.thread
+        else:
+            # Add a user message to steer the agent to respond more closely to the instructions.
+            new_message = ChatMessageContent(
+                role=AuthorRole.USER,
+                content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
+            )
+            response_item = await self._agent.get_response(messages=new_message, thread=self._agent_thread)
 
-        self.chat_history.clear()
-        self.agent_thread = response.thread
-
-        logger.debug(
-            f"Group chat container (Container ID: {self.id}; Agent name: {self.agent.name}) finished processing."
-        )
+        logger.debug(f"{self.id} responded with {response_item.message.content}.")
 
         await self.publish_message(
-            GroupChatResponseMessage(body=response.message),
-            TopicId(self.internal_topic_type, self.id.key),
+            GroupChatResponseMessage(body=response_item.message),
+            TopicId(self._internal_topic_type, self.id.key),
         )
 
 
@@ -125,20 +199,12 @@ class StringWithReason(KernelBaseModel):
     value: str
     reason: str
 
-    def __str__(self) -> str:
-        """Return the string value."""
-        return self.value
 
-
-class ObjectWithReason(KernelBaseModel):
+class ChatMessageContentWithReason(KernelBaseModel):
     """A class to represent an object value with a reason."""
 
-    value: object
+    value: ChatMessageContent
     reason: str
-
-    def __str__(self) -> str:
-        """Return the string value."""
-        return str(self.value)
 
 
 class GroupChatManager(KernelBaseModel, ABC):
@@ -185,7 +251,7 @@ class GroupChatManager(KernelBaseModel, ABC):
     async def filter_results(
         self,
         chat_history: ChatHistory,
-    ) -> ObjectWithReason:
+    ) -> ChatMessageContentWithReason:
         """Filter the results of the group chat.
 
         Args:
@@ -214,7 +280,9 @@ class RoundRobinGroupChatManager(GroupChatManager):
         if self.max_rounds is not None:
             return BoolWithReason(
                 value=self.current_round > self.max_rounds,
-                reason="Maximum rounds reached.",
+                reason="Maximum rounds reached."
+                if self.current_round > self.max_rounds
+                else "Not reached maximum rounds.",
             )
         return BoolWithReason(value=False, reason="No maximum rounds set.")
 
@@ -234,180 +302,28 @@ class RoundRobinGroupChatManager(GroupChatManager):
     async def filter_results(
         self,
         chat_history: ChatHistory,
-    ) -> ObjectWithReason:
+    ) -> ChatMessageContentWithReason:
         """Filter the results of the group chat."""
-        return ObjectWithReason(
+        return ChatMessageContentWithReason(
             value=chat_history.messages[-1],
             reason="The last message in the chat history is the result in the default round-robin group chat manager.",
         )
 
 
-class KernelFunctionGroupChatManager(GroupChatManager):
-    """A simple model-based group chat manager.
-
-    This manager requires a model that supports structured output.
-    """
-
-    kernel: Kernel
-
-    request_user_input_prompt: str = Field(
-        default="""
-You are in a role play game. Read the following conversation. Then determine if the game should request user input.
-###
-
-{{$history}}
-
-###
-
-Read the above conversation. Then determine if the game should request user input.
-"""
-    )
-
-    termination_prompt: str = Field(
-        default="""
-You are in a role play game. Read the following conversation. Then determine if the game should terminate or not.
-
-###
-                                    
-{{$history}}                        
-
-###
-
-Read the above conversation. Then determine if the game should terminate or not.
-"""
-    )
-
-    selection_prompt: str = Field(
-        default="""
-You are in a role play game. The following roles are available:
-{{$roles}}.
-Read the following conversation. Then select the next role from {{$participants}} to play. Only return the role.
-
-###
-
-{{$history}}
-
-###
-
-Read the above conversation. Then select the next role from {{$participants}} to play. Only return the name of the role.
-"""
-    )
-
-    @override
-    async def should_request_user_input(self, chat_history: ChatHistory) -> BoolWithReason:
-        """Check if the group chat should request user input."""
-        if self.user_input_func is None:
-            return False
-
-        response = await self.kernel.invoke_prompt(
-            self.request_user_input_prompt,
-            arguments=KernelArguments(
-                settings=PromptExecutionSettings(response_format=BoolWithReason),
-                history=chat_history.to_prompt(),
-            ),
-        )
-        if response is None:
-            raise RuntimeError("No response received from the kernel.")
-        if (
-            not isinstance(response.value, list)
-            or len(response.value) < 1
-            or not isinstance(response.value[0], ChatMessageContent)
-        ):
-            raise RuntimeError("Invalid response received from the kernel.")
-
-        return BoolWithReason.model_validate_json(response.value[0].content)
-
-    @override
-    async def should_terminate(self, chat_history: ChatHistory) -> BoolWithReason:
-        """Check if the group chat should terminate."""
-        if self.max_rounds is not None and self.current_round >= self.max_rounds:
-            logger.debug("Group chat manager reached the maximum number of rounds.")
-            return True
-
-        self.current_round += 1
-
-        response = await self.kernel.invoke_prompt(
-            self.termination_prompt,
-            arguments=KernelArguments(
-                settings=PromptExecutionSettings(response_format=BoolWithReason),
-                history=chat_history.to_prompt(),
-            ),
-        )
-        if response is None:
-            raise RuntimeError("No response received from the kernel.")
-        if (
-            not isinstance(response.value, list)
-            or len(response.value) < 1
-            or not isinstance(response.value[0], ChatMessageContent)
-        ):
-            raise RuntimeError("Invalid response received from the kernel.")
-
-        return BoolWithReason.model_validate_json(response.value[0].content)
-
-    @override
-    async def select_next_agent(
-        self,
-        chat_history: ChatHistory,
-        participant_descriptions: dict[str, str],
-    ) -> StringWithReason:
-        """Select the next agent to speak."""
-        response = await self.kernel.invoke_prompt(
-            self.selection_prompt,
-            arguments=KernelArguments(
-                settings=PromptExecutionSettings(response_format=StringWithReason),
-                history=chat_history.to_prompt(),
-                roles=", ".join(participant_descriptions.values()),
-                participants=", ".join(participant_descriptions.keys()),
-            ),
-        )
-        if response is None:
-            raise RuntimeError("No response received from the kernel.")
-        if (
-            not isinstance(response.value, list)
-            or len(response.value) < 1
-            or not isinstance(response.value[0], ChatMessageContent)
-        ):
-            raise RuntimeError("Invalid response received from the kernel.")
-
-        participant_name_with_reason = StringWithReason.model_validate_json(response.value[0].content)
-
-        for participant_name in participant_descriptions:
-            if participant_name.lower() in participant_name_with_reason.value.lower():
-                return participant_name_with_reason
-
-        raise RuntimeError(f"Unknown participant selected: {response.value[0].content}.")
-
-    @override
-    async def filter_results(
-        self,
-        chat_history: ChatHistory,
-    ) -> ObjectWithReason:
-        """Filter the results of the group chat."""
-        if not chat_history.messages:
-            raise RuntimeError("No messages in the chat history.")
-
-        return ObjectWithReason(
-            value=chat_history.messages[-1],
-            reason="The last message in the chat history is the result by default.",
-        )
-
-
-class GroupChatManagerContainer(RoutedAgent):
-    """A group chat manager container."""
+class GroupChatManagerActor(RoutedAgent):
+    """A group chat manager actor."""
 
     def __init__(
         self,
         manager: GroupChatManager,
         internal_topic_type: str,
         participant_descriptions: dict[str, str],
-        participant_topics: dict[str, str],
     ):
         """Initialize the group chat manager container."""
         self._manager = manager
         self._internal_topic_type = internal_topic_type
         self._chat_history = ChatHistory()
         self._participant_descriptions = participant_descriptions
-        self._participant_topics = participant_topics
 
         super().__init__(description="A container for the group chat manager.")
 
@@ -422,6 +338,7 @@ class GroupChatManagerContainer(RoutedAgent):
             )
         self._chat_history.add_message(message.body)
 
+        # User input state
         should_request_user_input = await self._manager.should_request_user_input(self._chat_history)
         if should_request_user_input and self._manager.user_input_func:
             logger.debug(f"Group chat manager requested user input. Reason: {should_request_user_input.reason}")
@@ -434,16 +351,18 @@ class GroupChatManagerContainer(RoutedAgent):
                 )
                 logger.debug("User input received and added to chat history.")
 
+        # Determine if the group chat should terminate
         should_terminate = await self._manager.should_terminate(self._chat_history)
         if should_terminate:
             logger.debug(f"Group chat manager decided to terminate the group chat. Reason: {should_terminate.reason}")
             result = await self._manager.filter_results(self._chat_history)
             await self.publish_message(
-                OrchestrationResultMessage(body=result),
+                GroupChatEndMessage(body=result.value),
                 TopicId(self._internal_topic_type, self.id.key),
             )
             return
 
+        # Select the next agent to speak if the group chat is not terminating
         next_agent = await self._manager.select_next_agent(self._chat_history, self._participant_descriptions)
         logger.debug(
             f"Group chat manager selected agent: {next_agent} on round {self._manager.current_round}. "
@@ -451,68 +370,175 @@ class GroupChatManagerContainer(RoutedAgent):
         )
 
         await self.publish_message(
-            GroupChatRequestMessage(),
-            TopicId(self._participant_topics[str(next_agent)], self.id.key),
+            GroupChatRequestMessage(agent_name=next_agent.value),
+            TopicId(self._internal_topic_type, self.id.key),
         )
 
 
-class GroupChatOrchestration(OrchestrationBase):
+class GroupChatOrchestration(
+    OrchestrationBase[
+        TExternalIn,
+        GroupChatStartMessage,
+        GroupChatEndMessage,
+        TExternalOut,
+    ]
+):
     """A group chat multi-agent pattern orchestration."""
 
-    manager: GroupChatManager
+    def __init__(
+        self,
+        members: list[Agent | OrchestrationBase],
+        manager: GroupChatManager,
+        name: str | None = None,
+        description: str | None = None,
+        input_transition: Callable[[TExternalIn], Awaitable[GroupChatStartMessage] | GroupChatStartMessage]
+        | None = None,
+        output_transition: Callable[[GroupChatEndMessage], Awaitable[TExternalOut] | TExternalOut] | None = None,
+    ) -> None:
+        """Initialize the handoff orchestration.
+
+        Args:
+            members (list[Agent | OrchestrationBase]): A list of agents or orchestrations that are part of the
+                handoff group. This first agent in the list will be the one that receives the first message.
+            manager (GroupChatManager): The group chat manager that manages the flow of the group chat.
+            name (str | None): The name of the orchestration.
+            description (str | None): The description of the orchestration.
+            input_transition (Callable | None): A function that transforms the external input message to the internal
+                input message.
+            output_transition (Callable | None): A function that transforms the internal output message to the external
+                output message.
+        """
+        self._manager = manager
+
+        super().__init__(
+            members=members,
+            name=name,
+            description=description,
+            input_transition=input_transition,
+            output_transition=output_transition,
+        )
 
     @override
-    async def _start(self, task: str, runtime: AgentRuntime) -> None:
+    async def _start(
+        self,
+        task: str | GroupChatStartMessage | ChatMessageContent,
+        runtime: AgentRuntime,
+        internal_topic_type: str,
+    ) -> None:
         """Start the group chat pattern."""
-        group_manager_type = f"GroupManager_{uuid.uuid4().hex}"
-        await GroupChatManagerContainer.register(
-            runtime,
-            group_manager_type,
-            lambda: GroupChatManagerContainer(
-                manager=self.manager,
-                internal_topic_type=self.internal_topic_type,
-                participant_descriptions={agent.name: agent.description for agent in self.agents},
-                participant_topics={agent.name: self._get_container_topic(agent) for agent in self.agents},
-            ),
-        )
-        await runtime.add_subscription(TypeSubscription(self.internal_topic_type, group_manager_type))
+        if isinstance(task, str):
+            message = GroupChatStartMessage(body=ChatMessageContent(AuthorRole.USER, content=task))
+        elif isinstance(task, ChatMessageContent):
+            message = GroupChatStartMessage(body=task)
 
-        message = ChatMessageContent(AuthorRole.USER, content=task, name="User")
-
-        await runtime.publish_message(
-            GroupChatResponseMessage(body=message),
-            TopicId(self.internal_topic_type, "default"),
-        )
+        target_actor_id = await runtime.get(self._get_orchestration_actor_type(internal_topic_type))
+        await runtime.send_message(message, target_actor_id)
 
     @override
-    async def _register_agents(self, runtime: AgentRuntime) -> None:
+    async def _prepare(
+        self,
+        runtime: AgentRuntime,
+        internal_topic_type: str,
+        external_topic_type: str | None = None,
+        direct_actor_type: str | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
+    ) -> str:
+        await self._register_members(runtime, internal_topic_type)
+        await self._register_manager(runtime, internal_topic_type)
+        await self._register_orchestration_actor(
+            runtime,
+            internal_topic_type,
+            external_topic_type=external_topic_type,
+            direct_actor_type=direct_actor_type,
+            result_callback=result_callback,
+        )
+        await self._add_subscriptions(runtime, internal_topic_type)
+
+        return self._get_orchestration_actor_type(internal_topic_type)
+
+    async def _register_members(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
         """Register the agents."""
         await asyncio.gather(*[
-            GroupChatAgentContainer.register(
+            GroupChatAgentActor.register(
                 runtime,
-                self._get_container_type(agent),
-                lambda agent=agent: GroupChatAgentContainer(
-                    agent,
-                    description=agent.description,
-                    internal_topic_type=self.internal_topic_type,
-                ),
+                self._get_agent_actor_type(agent, internal_topic_type),
+                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type),
             )
-            for agent in self.agents
+            for agent in self._members
+            if isinstance(agent, Agent)
         ])
+        # TODO(@taochen): Orchestration
 
-    @override
-    async def _add_subscriptions(self, runtime: AgentRuntime) -> None:
+    async def _register_manager(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
+        """Register the group chat manager."""
+        await GroupChatManagerActor.register(
+            runtime,
+            self._get_manager_actor_type(internal_topic_type),
+            lambda: GroupChatManagerActor(
+                self._manager,
+                internal_topic_type=internal_topic_type,
+                participant_descriptions={agent.name: agent.description for agent in self._members},
+            ),
+        )
+        # TODO(@taochen): Orchestration
+
+    async def _register_orchestration_actor(
+        self,
+        runtime: AgentRuntime,
+        internal_topic_type: str,
+        external_topic_type: str | None = None,
+        direct_actor_type: str | None = None,
+        result_callback: Callable[[TExternalOut], None] | None = None,
+    ) -> None:
+        await GroupChatOrchestrationActor[self.t_external_in, self.t_external_out].register(
+            runtime,
+            self._get_orchestration_actor_type(internal_topic_type),
+            lambda: GroupChatOrchestrationActor[self.t_external_in, self.t_external_out](
+                internal_topic_type,
+                self._input_transition,
+                self._output_transition,
+                external_topic_type=external_topic_type,
+                direct_actor_type=direct_actor_type,
+                result_callback=result_callback,
+            ),
+        )
+
+    async def _add_subscriptions(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
         """Add subscriptions."""
         subscriptions: list[TypeSubscription] = []
-        for agent in self.agents:
-            subscriptions.append(TypeSubscription(self.internal_topic_type, self._get_container_type(agent)))
-            subscriptions.append(TypeSubscription(self._get_container_topic(agent), self._get_container_type(agent)))
+        for agent in [member for member in self._members if isinstance(member, Agent)]:
+            subscriptions.append(
+                TypeSubscription(internal_topic_type, self._get_agent_actor_type(agent, internal_topic_type))
+            )
+            # TODO(@taochen): Orchestration
+        subscriptions.append(TypeSubscription(internal_topic_type, self._get_manager_actor_type(internal_topic_type)))
+        subscriptions.append(
+            TypeSubscription(internal_topic_type, self._get_orchestration_actor_type(internal_topic_type))
+        )
         await asyncio.gather(*[runtime.add_subscription(sub) for sub in subscriptions])
 
-    def _get_container_type(self, agent: Agent) -> str:
-        """Get the container type for an agent."""
-        return f"{agent.name}_group_chat_container"
+    def _get_agent_actor_type(self, agent: Agent | str, internal_topic_type: str) -> str:
+        """Get the actor type for an agent.
 
-    def _get_container_topic(self, agent: Agent) -> str:
-        """Get the container topic type for an agent."""
-        return f"{agent.name}_group_chat_{self.internal_topic_type}"
+        The type is appended with the internal topic type to ensure uniqueness in the runtime
+        that may be shared by multiple orchestrations.
+        """
+        if isinstance(agent, Agent):
+            agent = agent.name
+        return f"{agent}_{internal_topic_type}"
+
+    def _get_manager_actor_type(self, internal_topic_type: str) -> str:
+        """Get the actor type for the group chat manager.
+
+        The type is appended with the internal topic type to ensure uniqueness in the runtime
+        that may be shared by multiple orchestrations.
+        """
+        return f"{GroupChatManagerActor.__name__}_{internal_topic_type}"
+
+    def _get_orchestration_actor_type(self, internal_topic_type: str) -> str:
+        """Get the orchestration actor type.
+
+        The type is appended with the internal topic type to ensure uniqueness in the runtime
+        that may be shared by multiple orchestrations.
+        """
+        return f"{GroupChatOrchestrationActor.__name__}_{internal_topic_type}"
