@@ -37,15 +37,16 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    result = await concurrent_pattern.invoke(
+    orchestration_result = await concurrent_pattern.invoke(
         task="Why is the sky blue in one sentence?",
         runtime=runtime,
     )
 
-    await runtime.stop_when_idle()
-
-    for agent_name, response in result.body.items():
+    value = await orchestration_result.get(timeout=5)
+    for agent_name, response in value.body.items():
         print(f"{agent_name} response: {response}")
+
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":

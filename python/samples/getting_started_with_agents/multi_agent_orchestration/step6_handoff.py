@@ -123,14 +123,15 @@ async def main():
         labels=[],
     )
 
-    result = await handoff_pattern.invoke(
+    orchestration_result = await handoff_pattern.invoke(
         task=github_issue.model_dump_json(),
         runtime=runtime,
     )
 
-    await runtime.stop_when_idle()
+    value = await orchestration_result.get(timeout=100)
+    print(value.body)
 
-    print("Result:", result)
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":

@@ -10,10 +10,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, Union, cast, get_args
 
 from autogen_core import AgentRuntime, BaseAgent, MessageContext
+from pydantic import Field
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
+from semantic_kernel.kernel_pydantic import KernelBaseModel
 
 if sys.version_info >= (3, 12):
     from typing import override  # pragma: no cover
@@ -177,6 +179,35 @@ class OrchestrationActorBase(
         pass
 
 
+class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
+    """The result of the orchestration.
+
+    This class is used to store the result of the orchestration and the context of the message.
+    """
+
+    value: TExternalOut | None = None
+    event: asyncio.Event = Field(default=asyncio.Event())
+
+    async def get(self, timeout: int | None = None) -> TExternalOut:
+        """Get the result of the orchestration.
+
+        Args:
+            timeout (int | None): The timeout (seconds) for the orchestration. If None, wait indefinitely.
+
+        Returns:
+            TExternalOut: The result of the orchestration.
+        """
+        # TODO(@taochen): Cancel the task if timeout is reached.
+        if timeout is not None:
+            await asyncio.wait_for(self.event.wait(), timeout=timeout)
+        else:
+            await self.event.wait()
+
+        if self.value is None:
+            raise RuntimeError("Result is None. An error may have occurred during the invocation.")
+        return self.value
+
+
 class OrchestrationBase(
     ABC,
     Generic[
@@ -290,7 +321,7 @@ class OrchestrationBase(
         task: str | ChatMessageContent | TExternalIn,
         runtime: AgentRuntime,
         time_out: int | None = None,
-    ) -> TExternalOut:
+    ) -> OrchestrationResult[TExternalOut]:
         """Invoke the multi-agent orchestration and return the result.
 
         This method is a blocking call that waits for the orchestration to finish
@@ -301,13 +332,12 @@ class OrchestrationBase(
             runtime (AgentRuntime): The runtime environment for the agents.
             time_out (int | None): The timeout (seconds) for the orchestration. If None, wait indefinitely.
         """
-        orchestration_result: TExternalOut | None = None
-        orchestration_result_event = asyncio.Event()
+        orchestration_result = OrchestrationResult[TExternalOut]()
 
         def result_callback(result: TExternalOut) -> None:
             nonlocal orchestration_result
-            orchestration_result = result
-            orchestration_result_event.set()
+            orchestration_result.value = result
+            orchestration_result.event.set()
 
         self._set_types()
 
@@ -334,16 +364,7 @@ class OrchestrationBase(
                 f"Invalid task type: {type(task)}. Expected str, {self.t_external_in}, or ChatMessageContent."
             )
 
-        await self._start(prepared_task, runtime, internal_topic_type)
-
-        # Wait for the orchestration result
-        if time_out is not None:
-            await asyncio.wait_for(orchestration_result_event.wait(), timeout=time_out)
-        else:
-            await orchestration_result_event.wait()
-
-        if orchestration_result is None:
-            raise RuntimeError("Orchestration result is None.")
+        task = asyncio.create_task(self._start(prepared_task, runtime, internal_topic_type))
         return orchestration_result
 
     async def prepare(

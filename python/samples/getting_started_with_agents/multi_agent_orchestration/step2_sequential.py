@@ -59,14 +59,15 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    result = await sequential_pattern.invoke(
+    orchestration_result = await sequential_pattern.invoke(
         task="An eco-friendly stainless steel water bottle that keeps drinks cold for 24 hours",
         runtime=runtime,
     )
 
-    await runtime.stop_when_idle()
+    value = await orchestration_result.get(timeout=20)
+    print(value.body)
 
-    print(result.body)
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":

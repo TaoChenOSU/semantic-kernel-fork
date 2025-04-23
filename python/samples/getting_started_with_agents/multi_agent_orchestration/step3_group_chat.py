@@ -278,14 +278,15 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    result = await group_chat_pattern.invoke(
+    orchestration_result = await group_chat_pattern.invoke(
         task="Please start the discussion.",
         runtime=runtime,
     )
 
-    await runtime.stop_when_idle()
+    value = await orchestration_result.get(timeout=100)
+    print(value.body.content)
 
-    print(result)
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":

@@ -168,14 +168,15 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    result = await sequential_orchestration.invoke(
+    orchestration_result = await sequential_orchestration.invoke(
         task="Design a video streaming plaform.",
         runtime=runtime,
     )
 
-    await runtime.stop_when_idle()
+    value = await orchestration_result.get(timeout=100)
+    print(value.body)
 
-    print(result.body)
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":
