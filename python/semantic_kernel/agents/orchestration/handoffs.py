@@ -68,12 +68,6 @@ class HandoffResponseMessage(KernelBaseModel):
     body: ChatMessageContent
 
 
-class HandoffResetMessage(KernelBaseModel):
-    """A message to reset a participant's chat history in a handoff group."""
-
-    pass
-
-
 TExternalIn = TypeVar("TExternalIn", default=HandoffStartMessage)
 TExternalOut = TypeVar("TExternalOut", default=HandoffEndMessage)
 
@@ -254,14 +248,6 @@ class HandoffAgentActor(AgentActorBase):
             HandoffEndMessage(body=ChatMessageContent(role=AuthorRole.ASSISTANT, content=task_summary)),
             target_actor_id,
         )
-
-    @message_handler
-    async def _handle_reset_message(self, message: HandoffResetMessage, cts: MessageContext) -> None:
-        """Handle a reset message to clear the chat history."""
-        if self._agent_thread is not None:
-            await self._agent_thread.delete()
-            self._agent_thread = None
-        self._chat_history.clear()
 
     @message_handler
     async def _handle_response_message(self, message: HandoffResponseMessage, cts: MessageContext) -> None:
