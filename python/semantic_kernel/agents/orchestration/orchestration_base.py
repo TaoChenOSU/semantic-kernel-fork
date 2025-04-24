@@ -186,7 +186,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
     """
 
     value: TExternalOut | None = None
-    event: asyncio.Event = Field(default=asyncio.Event())
+    event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
 
     async def get(self, timeout: int | None = None) -> TExternalOut:
         """Get the result of the orchestration.

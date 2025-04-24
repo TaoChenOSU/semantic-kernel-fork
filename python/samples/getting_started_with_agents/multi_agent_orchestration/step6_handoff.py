@@ -71,7 +71,7 @@ async def main():
         plugins=[GithubPlugin()],
     )
 
-    handoff_pattern = HandoffOrchestration(
+    handoff_orchestration = HandoffOrchestration(
         members=[triage_agent, python_agent, dotnet_agent],
         handoffs={
             triage_agent.name: [
@@ -86,9 +86,6 @@ async def main():
             ]
         },
     )
-
-    runtime = SingleThreadedAgentRuntime()
-    runtime.start()
 
     github_issue = GithubIssue(
         id="12345",
@@ -123,7 +120,10 @@ async def main():
         labels=[],
     )
 
-    orchestration_result = await handoff_pattern.invoke(
+    runtime = SingleThreadedAgentRuntime()
+    runtime.start()
+
+    orchestration_result = await handoff_orchestration.invoke(
         task=github_issue.model_dump_json(),
         runtime=runtime,
     )

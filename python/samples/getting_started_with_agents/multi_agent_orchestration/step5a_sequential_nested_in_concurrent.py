@@ -84,13 +84,13 @@ async def main():
         service=OpenAIChatCompletion(),
     )
 
-    physics_sequential = get_sequential_orchestration(physics_agent, target_language="French")
-    chemistry_sequential = get_sequential_orchestration(chemistry_agent, target_language="Spanish")
+    physics_sequential_orchestration = get_sequential_orchestration(physics_agent, target_language="French")
+    chemistry_sequential_orchestration = get_sequential_orchestration(chemistry_agent, target_language="Spanish")
 
-    concurrent_pattern = ConcurrentOrchestration(
+    concurrent_orchestration = ConcurrentOrchestration(
         members=[
-            physics_sequential,
-            chemistry_sequential,
+            physics_sequential_orchestration,
+            chemistry_sequential_orchestration,
             chinese_physics_agent,
         ]
     )
@@ -98,7 +98,7 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await concurrent_pattern.invoke(
+    orchestration_result = await concurrent_orchestration.invoke(
         task="Why is the sky blue in one sentence?",
         runtime=runtime,
     )

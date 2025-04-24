@@ -30,14 +30,14 @@ async def main():
         service=OpenAIChatCompletion(),
     )
 
-    concurrent_pattern = ConcurrentOrchestration(
+    concurrent_orchestration = ConcurrentOrchestration(
         members=[physics_agent, chemistry_agent],
     )
 
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await concurrent_pattern.invoke(
+    orchestration_result = await concurrent_orchestration.invoke(
         task="Why is the sky blue in one sentence?",
         runtime=runtime,
     )

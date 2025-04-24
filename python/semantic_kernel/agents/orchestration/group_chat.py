@@ -51,12 +51,6 @@ class GroupChatResponseMessage(KernelBaseModel):
     body: ChatMessageContent
 
 
-class GroupChatResetMessage(KernelBaseModel):
-    """A message to reset a participant's chat history in a group chat."""
-
-    pass
-
-
 TExternalIn = TypeVar("TExternalIn", default=GroupChatStartMessage)
 TExternalOut = TypeVar("TExternalOut", default=GroupChatEndMessage)
 
@@ -114,19 +108,12 @@ class GroupChatAgentActor(AgentActorBase):
     """An agent actor that process messages in a group chat."""
 
     def __init__(self, agent: Agent, internal_topic_type: str):
-        """Initialize the group chat agent container."""
+        """Initialize the group chat agent actor."""
         super().__init__(agent=agent, internal_topic_type=internal_topic_type)
 
         self._agent_thread: AgentThread | None = None
         # Chat history to temporarily store messages before the agent thread is created
         self._chat_history = ChatHistory()
-
-    @message_handler
-    async def _on_group_chat_reset(self, message: GroupChatResetMessage, ctx: MessageContext) -> None:
-        self._chat_history.clear()
-        if self._agent_thread:
-            await self._agent_thread.delete()
-            self._agent_thread = None
 
     @message_handler
     async def _on_group_chat_message(self, message: GroupChatResponseMessage, ctx: MessageContext) -> None:
@@ -480,7 +467,6 @@ class GroupChatOrchestration(
                 participant_descriptions={agent.name: agent.description for agent in self._members},
             ),
         )
-        # TODO(@taochen): Orchestration
 
     async def _register_orchestration_actor(
         self,

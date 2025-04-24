@@ -48,7 +48,7 @@ async def main():
         service=OpenAIChatCompletion(),
     )
 
-    sequential_pattern = SequentialOrchestration(
+    sequential_orchestration = SequentialOrchestration(
         members=[
             concept_extractor_agent,
             writer_agent,
@@ -59,7 +59,7 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await sequential_pattern.invoke(
+    orchestration_result = await sequential_orchestration.invoke(
         task="An eco-friendly stainless steel water bottle that keeps drinks cold for 24 hours",
         runtime=runtime,
     )

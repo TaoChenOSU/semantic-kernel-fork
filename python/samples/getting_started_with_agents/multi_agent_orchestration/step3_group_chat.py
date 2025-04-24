@@ -266,7 +266,7 @@ async def main():
     """Main function to run the agents."""
     topic = "What does a good life mean to you personally?"
 
-    group_chat_pattern = GroupChatOrchestration(
+    group_chat_orchestration = GroupChatOrchestration(
         members=agents(),
         manager=ChatCompletionGroupChatManager(
             topic=topic,
@@ -278,7 +278,7 @@ async def main():
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await group_chat_pattern.invoke(
+    orchestration_result = await group_chat_orchestration.invoke(
         task="Please start the discussion.",
         runtime=runtime,
     )

@@ -7,7 +7,10 @@ from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.open_ai.open_ai_assistant_agent import OpenAIAssistantAgent
-from semantic_kernel.agents.orchestration.magentic_one import MagenticOneOrchestration
+from semantic_kernel.agents.orchestration.magentic_one import MagenticOneManager, MagenticOneOrchestration
+from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_prompt_execution_settings import (
+    OpenAIPromptExecutionSettings,
+)
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 
 logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
@@ -41,18 +44,31 @@ async def main():
         definition=definition,
     )
 
-    magentic_one_pattern = MagenticOneOrchestration(
-        agents=[research_agent, coder_agent],
-        manager_service=OpenAIChatCompletion(),
+    magentic_one_orchestration = MagenticOneOrchestration(
+        members=[research_agent, coder_agent],
+        manager=MagenticOneManager(
+            chat_completion_service=OpenAIChatCompletion(),
+            prompt_execution_settings=OpenAIPromptExecutionSettings(),
+            participant_descriptions={agent.name: agent.description for agent in [research_agent, coder_agent]},
+        ),
     )
-    await magentic_one_pattern.start(
+
+    runtime = SingleThreadedAgentRuntime()
+    runtime.start()
+
+    orchestration_result = await magentic_one_orchestration.invoke(
         task=(
             "What are the 50 tallest buildings in the world? Create a table with their names"
             " and heights grouped by country with a column of the average height of the buildings"
             " in each country"
         ),
-        runtime=SingleThreadedAgentRuntime(),
+        runtime=runtime,
     )
+
+    value = await orchestration_result.get(timeout=100)
+    print(value.body)
+
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":
