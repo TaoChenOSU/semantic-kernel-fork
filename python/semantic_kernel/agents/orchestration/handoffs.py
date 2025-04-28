@@ -2,19 +2,21 @@
 
 
 import asyncio
-import inspect
 import logging
 import sys
 from collections.abc import Awaitable, Callable
 from functools import partial
 
 from autogen_core import AgentRuntime, MessageContext, TopicId, TypeSubscription, message_handler
-from typing_extensions import TypeVar
 
-from semantic_kernel.agents.agent import Agent, AgentThread
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
-from semantic_kernel.agents.orchestration.orchestration_base import OrchestrationActorBase, OrchestrationBase
-from semantic_kernel.contents.chat_history import ChatHistory
+from semantic_kernel.agents.orchestration.orchestration_base import (
+    DefaultExternalTypeAlias,
+    OrchestrationBase,
+    TExternalIn,
+    TExternalOut,
+)
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.filters.auto_function_invocation.auto_function_invocation_context import (
@@ -36,6 +38,8 @@ else:
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+# region Messages and Types
+
 
 class HandoffConnection(KernelBaseModel):
     """A model representing a handoff connection."""
@@ -47,13 +51,7 @@ class HandoffConnection(KernelBaseModel):
 class HandoffStartMessage(KernelBaseModel):
     """A start message type to kick off a handoff group chat."""
 
-    body: ChatMessageContent
-
-
-class HandoffEndMessage(KernelBaseModel):
-    """A message to end a handoff group chat."""
-
-    body: ChatMessageContent
+    body: DefaultExternalTypeAlias
 
 
 class HandoffRequestMessage(KernelBaseModel):
@@ -68,110 +66,19 @@ class HandoffResponseMessage(KernelBaseModel):
     body: ChatMessageContent
 
 
-TExternalIn = TypeVar("TExternalIn", default=HandoffStartMessage)
-TExternalOut = TypeVar("TExternalOut", default=HandoffEndMessage)
-
-
-class HandoffOrchestrationActor(
-    OrchestrationActorBase[
-        TExternalIn,
-        HandoffStartMessage,
-        HandoffEndMessage,
-        TExternalOut,
-    ],
-):
-    """An agent that is part of the orchestration that is responsible for relaying external messages."""
-
-    def __init__(
-        self,
-        internal_topic_type: str,
-        input_transition: Callable[[TExternalIn], Awaitable[HandoffStartMessage] | HandoffStartMessage],
-        output_transition: Callable[[HandoffEndMessage], Awaitable[TExternalOut] | TExternalOut],
-        *,
-        initial_agent_name: str,
-        external_topic_type: str | None = None,
-        direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOut], None] | None = None,
-    ) -> None:
-        """Initialize the orchestration agent.
-
-        Args:
-            internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
-            input_transition (Callable): A function that transforms the external input message to the internal
-                input message.
-            output_transition (Callable): A function that transforms the internal output message to the external
-                output message.
-            initial_agent_name (str): The name of the agent that will receive the first message.
-            external_topic_type (str | None): The external topic type for the orchestration.
-            direct_actor_type (str | None): The direct actor type for which this actor will relay the output message
-                to.
-            result_callback: A function that is called when the result is available.
-        """
-        self._initial_agent_name = initial_agent_name
-
-        super().__init__(
-            internal_topic_type=internal_topic_type,
-            input_transition=input_transition,
-            output_transition=output_transition,
-            external_topic_type=external_topic_type,
-            direct_actor_type=direct_actor_type,
-            result_callback=result_callback,
-        )
-
-    @override
-    async def _handle_orchestration_input_message(
-        self,
-        # The following does not validate LSP because Python doesn't recognize the generic type
-        message: HandoffStartMessage,  # type: ignore
-        ctx: MessageContext,
-    ) -> None:
-        logger.debug(f"{self.id}: Received orchestration input message.")
-        await self.publish_message(
-            HandoffResponseMessage(body=message.body),
-            TopicId(self._internal_topic_type, self.id.key),
-        )
-        await self.publish_message(
-            HandoffRequestMessage(agent_name=self._initial_agent_name),
-            TopicId(self._internal_topic_type, self.id.key),
-        )
-
-    @override
-    async def _handle_orchestration_output_message(
-        self,
-        message: HandoffEndMessage,
-        ctx: MessageContext,
-    ) -> None:
-        logger.debug(f"{self.id}: Received orchestration output message.")
-        if inspect.isawaitable(self._output_transition):
-            external_output_message: TExternalOut = await self._output_transition(message)
-        else:
-            external_output_message: TExternalOut = self._output_transition(message)  # type: ignore[no-redef]
-
-        if self._external_topic_type:
-            logger.debug(f"Relaying message to external topic: {self._external_topic_type}")
-            await self.publish_message(
-                external_output_message,
-                TopicId(self._external_topic_type, self.id.key),
-            )
-        if self._direct_actor_type:
-            logger.debug(f"Relaying message directly to actor: {self._direct_actor_type}")
-            target_actor_id = await self.runtime.get(self._direct_actor_type)
-            await self.send_message(
-                external_output_message,
-                target_actor_id,
-            )
-        if self._result_callback:
-            self._result_callback(external_output_message)
-
-
 HANDOFF_PLUGIN_NAME = "Handoff"
 
 
 async def _handoff_function_filter(context: AutoFunctionInvocationContext, next):
+    """A filter to terminate an agent when it decides to handoff the conversation to another agent."""
     await next(context)
     if context.function.plugin_name == HANDOFF_PLUGIN_NAME:
-        # Terminate when ever an agent decides to handoff the conversation to another agent
         context.terminate = True
+
+
+# endregion Messages and Types
+
+# region HandoffAgentActor
 
 
 class HandoffAgentActor(AgentActorBase):
@@ -181,20 +88,17 @@ class HandoffAgentActor(AgentActorBase):
         self,
         agent: Agent,
         internal_topic_type: str,
-        orchestration_actor_type: str,
         handoff_topic_connections: list[HandoffConnection],
+        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the handoff agent actor."""
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
-
-        self._agent_thread: AgentThread | None = None
-        # Chat history to temporarily store messages before the agent thread is created
-        self._chat_history: ChatHistory = ChatHistory()
         self._handoff_topic_connections = handoff_topic_connections
-        self._orchestration_actor_type = orchestration_actor_type
+        self._result_callback = result_callback
 
         self._kernel = agent.kernel.model_copy()
         self._add_handoff_functions()
+
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
 
     def _add_handoff_functions(self):
         """Add handoff functions to the agent's kernel."""
@@ -243,11 +147,25 @@ class HandoffAgentActor(AgentActorBase):
     async def _end_task(self, task_summary: str) -> None:
         """End the task with a summary."""
         logger.debug(f"{self.id}: Ending task with summary: {task_summary}")
-        target_actor_id = await self.runtime.get(self._orchestration_actor_type)
-        await self.send_message(
-            HandoffEndMessage(body=ChatMessageContent(role=AuthorRole.ASSISTANT, content=task_summary)),
-            target_actor_id,
-        )
+        if self._result_callback:
+            await self._result_callback(ChatMessageContent(role=AuthorRole.ASSISTANT, content=task_summary))
+
+    @message_handler
+    async def _handle_start_message(self, message: HandoffStartMessage, cts: MessageContext) -> None:
+        logger.debug(f"{self.id}: Received handoff start message.")
+        if isinstance(message.body, ChatMessageContent):
+            if self._agent_thread:
+                await self._agent_thread.on_new_message(message.body)
+            else:
+                self._chat_history.add_message(message.body)
+        elif isinstance(message.body, list) and all(isinstance(m, ChatMessageContent) for m in message.body):
+            for m in message.body:
+                if self._agent_thread:
+                    await self._agent_thread.on_new_message(m)
+                else:
+                    self._chat_history.add_message(m)
+        else:
+            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
 
     @message_handler
     async def _handle_response_message(self, message: HandoffResponseMessage, cts: MessageContext) -> None:
@@ -316,14 +234,12 @@ class HandoffAgentActor(AgentActorBase):
                 )
 
 
-class HandoffOrchestration(
-    OrchestrationBase[
-        TExternalIn,
-        HandoffStartMessage,
-        HandoffEndMessage,
-        TExternalOut,
-    ]
-):
+# endregion HandoffAgentActor
+
+# region HandoffOrchestration
+
+
+class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
     """An orchestration class for managing handoff agents in a group chat."""
 
     def __init__(
@@ -332,8 +248,9 @@ class HandoffOrchestration(
         handoffs: dict[str, list[HandoffConnection]],
         name: str | None = None,
         description: str | None = None,
-        input_transition: Callable[[TExternalIn], Awaitable[HandoffStartMessage] | HandoffStartMessage] | None = None,
-        output_transition: Callable[[HandoffEndMessage], Awaitable[TExternalOut] | TExternalOut] | None = None,
+        input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
+        | None = None,
+        output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
     ) -> None:
         """Initialize the handoff orchestration.
 
@@ -344,110 +261,80 @@ class HandoffOrchestration(
                 connections.
             name (str | None): The name of the orchestration.
             description (str | None): The description of the orchestration.
-            input_transition (Callable | None): A function that transforms the external input message to the internal
-                input message.
-            output_transition (Callable | None): A function that transforms the internal output message to the external
-                output message.
+            input_transform (Callable | None): A function that transforms the external input message.
+            output_transform (Callable | None): A function that transforms the internal output message.
         """
         self._handoffs = handoffs
-
-        for member in members:
-            if not isinstance(member, Agent):
-                raise ValueError(f"All members must be of type Agent in HandoffOrchestration, but got {type(member)}")
 
         super().__init__(
             members=members,
             name=name,
             description=description,
-            input_transition=input_transition,
-            output_transition=output_transition,
+            input_transform=input_transform,
+            output_transform=output_transform,
         )
 
     @override
     async def _start(
         self,
-        task: str | HandoffStartMessage | ChatMessageContent,
+        task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
     ) -> None:
-        """Start the concurrent pattern."""
-        if isinstance(task, str):
-            message = HandoffStartMessage(
-                body=ChatMessageContent(
-                    role=AuthorRole.USER,
-                    content=task,
-                )
-            )
-        elif isinstance(task, ChatMessageContent):
-            message = HandoffStartMessage(body=task)
+        """Start the handoff pattern.
 
-        target_actor_id = await runtime.get(self._get_orchestration_actor_type(internal_topic_type))
-        await runtime.send_message(message, target_actor_id)
+        This ensures that all initial messages are sent to the individual actors
+        and processed before the group chat begins. It's important because if the
+        manager actor processes its start message too quickly (or other actors are
+        too slow), it might send a request to the next agent before the other actors
+        have the necessary context.
+        """
+
+        async def send_start_message(agent: Agent) -> None:
+            target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))
+            await runtime.send_message(HandoffStartMessage(body=task), target_actor_id)
+
+        await asyncio.gather(*[send_start_message(agent) for agent in self._members])
+
+        # Send the handoff request message to the first agent in the list
+        target_actor_id = await runtime.get(self._get_agent_actor_type(self._members[0], internal_topic_type))
+        await runtime.send_message(HandoffRequestMessage(agent_name=self._members[0].name), target_actor_id)
 
     @override
     async def _prepare(
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        external_topic_type: str | None = None,
-        direct_actor_type: str | None = None,
         result_callback: Callable[[TExternalOut], None] | None = None,
-    ) -> str:
+    ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
-        await self._register_members(runtime, internal_topic_type)
-        await self._register_orchestration_actor(
-            runtime,
-            internal_topic_type,
-            external_topic_type=external_topic_type,
-            direct_actor_type=direct_actor_type,
-            result_callback=result_callback,
-        )
+        await self._register_members(runtime, internal_topic_type, result_callback)
         await self._add_subscriptions(runtime, internal_topic_type)
 
-        return self._get_orchestration_actor_type(internal_topic_type)
-
-    async def _register_members(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
-        """Register the members with the runtime."""
-        member_names = {m.name for m in self._members if isinstance(m, Agent)}
-        for member in self._members:
-            if isinstance(member, Agent):
-                handoff_connections = self._handoffs.get(member.name, [])
-                for connection in handoff_connections:
-                    if connection.agent_name not in member_names:
-                        logger.warning(f"Agent {connection.agent_name} is not a member of the handoff group.")
-
-                await HandoffAgentActor.register(
-                    runtime,
-                    self._get_agent_actor_type(member, internal_topic_type),
-                    lambda member=member, handoff_connections=handoff_connections: HandoffAgentActor(
-                        member,
-                        internal_topic_type,
-                        self._get_orchestration_actor_type(internal_topic_type),
-                        handoff_connections,
-                    ),
-                )
-
-    async def _register_orchestration_actor(
+    async def _register_members(
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        external_topic_type: str | None = None,
-        direct_actor_type: str | None = None,
-        result_callback: Callable[[TExternalOut], None] | None = None,
+        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
-        await HandoffOrchestrationActor[self.t_external_in, self.t_external_in].register(
-            runtime,
-            self._get_orchestration_actor_type(internal_topic_type),
-            lambda: HandoffOrchestrationActor[self.t_external_in, self.t_external_out](
-                internal_topic_type,
-                self._input_transition,
-                self._output_transition,
-                initial_agent_name=self._members[0].name,
-                external_topic_type=external_topic_type,
-                direct_actor_type=direct_actor_type,
-                result_callback=result_callback,
-            ),
-        )
+        """Register the members with the runtime."""
+        member_names = {m.name for m in self._members if isinstance(m, Agent)}
+        for member in self._members:
+            handoff_connections = self._handoffs.get(member.name, [])
+            for connection in handoff_connections:
+                if connection.agent_name not in member_names:
+                    logger.warning(f"Agent {connection.agent_name} is not a member of the handoff group.")
+
+            await HandoffAgentActor.register(
+                runtime,
+                self._get_agent_actor_type(member, internal_topic_type),
+                lambda member=member, handoff_connections=handoff_connections: HandoffAgentActor(
+                    member,
+                    internal_topic_type,
+                    handoff_connections,
+                    result_callback=result_callback,
+                ),
+            )
 
     async def _add_subscriptions(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
         """Add subscriptions to the runtime."""
@@ -457,31 +344,17 @@ class HandoffOrchestration(
                 self._get_agent_actor_type(member, internal_topic_type),
             )
             for member in self._members
-            if isinstance(member, Agent)
         ]
-        subscriptions.append(
-            TypeSubscription(
-                internal_topic_type,
-                self._get_orchestration_actor_type(internal_topic_type),
-            )
-        )
 
         await asyncio.gather(*[runtime.add_subscription(subscription) for subscription in subscriptions])
 
-    def _get_agent_actor_type(self, agent: Agent | str, internal_topic_type: str) -> str:
+    def _get_agent_actor_type(self, agent: Agent, internal_topic_type: str) -> str:
         """Get the actor type for an agent.
 
         The type is appended with the internal topic type to ensure uniqueness in the runtime
         that may be shared by multiple orchestrations.
         """
-        if isinstance(agent, Agent):
-            agent = agent.name
-        return f"{agent}_{internal_topic_type}"
+        return f"{agent.name}_{internal_topic_type}"
 
-    def _get_orchestration_actor_type(self, internal_topic_type: str) -> str:
-        """Get the orchestration actor type.
 
-        The type is appended with the internal topic type to ensure uniqueness in the runtime
-        that may be shared by multiple orchestrations.
-        """
-        return f"{HandoffOrchestrationActor.__name__}_{internal_topic_type}"
+# endregion HandoffOrchestration

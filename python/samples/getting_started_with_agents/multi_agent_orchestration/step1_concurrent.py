@@ -8,6 +8,7 @@ from autogen_core import SingleThreadedAgentRuntime
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
+from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
 logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
 logging.getLogger("semantic_kernel.agents.orchestration.concurrent").setLevel(
@@ -42,9 +43,12 @@ async def main():
         runtime=runtime,
     )
 
-    value = await orchestration_result.get(timeout=5)
-    for agent_name, response in value.body.items():
-        print(f"{agent_name} response: {response}")
+    value = await orchestration_result.get(timeout=10)
+    if isinstance(value, list) and all(isinstance(item, ChatMessageContent) for item in value):
+        for item in value:
+            print(f"{item.name}: {item.content}")
+    else:
+        print("Unexpected result type:", type(value))
 
     await runtime.stop_when_idle()
 

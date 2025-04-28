@@ -3,7 +3,8 @@
 
 from autogen_core import RoutedAgent
 
-from semantic_kernel.agents.agent import Agent
+from semantic_kernel.agents.agent import Agent, AgentThread
+from semantic_kernel.contents.chat_history import ChatHistory
 
 
 class AgentActorBase(RoutedAgent):
@@ -18,5 +19,9 @@ class AgentActorBase(RoutedAgent):
         """
         self._agent = agent
         self._internal_topic_type = internal_topic_type
+
+        self._agent_thread: AgentThread | None = None
+        # Chat history to temporarily store messages before the agent thread is created
+        self._chat_history = ChatHistory()
 
         RoutedAgent.__init__(self, description=agent.description or "Semantic Kernel Agent")

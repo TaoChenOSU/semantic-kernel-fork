@@ -180,8 +180,7 @@ class ChatCompletionGroupChatManager(GroupChatManager):
 
         self.current_round += 1
 
-        chat_history_clone = chat_history.model_copy(deep=True)
-        chat_history_clone.add_message(
+        chat_history.add_message(
             ChatMessageContent(
                 role=AuthorRole.SYSTEM,
                 content=await self._render_prompt(
@@ -192,7 +191,7 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         )
 
         response = await self.service.get_chat_message_content(
-            chat_history_clone,
+            chat_history,
             settings=PromptExecutionSettings(response_format=BoolWithReason),
         )
 
@@ -205,8 +204,7 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         participant_descriptions: dict[str, str],
     ) -> StringWithReason:
         """Select the next agent to speak."""
-        chat_history_clone = chat_history.model_copy(deep=True)
-        chat_history_clone.add_message(
+        chat_history.add_message(
             ChatMessageContent(
                 role=AuthorRole.SYSTEM,
                 content=await self._render_prompt(
@@ -220,7 +218,7 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         )
 
         response = await self.service.get_chat_message_content(
-            chat_history_clone,
+            chat_history,
             settings=PromptExecutionSettings(response_format=StringWithReason),
         )
 
@@ -284,7 +282,7 @@ async def main():
     )
 
     value = await orchestration_result.get(timeout=100)
-    print(value.body.content)
+    print(value)
 
     await runtime.stop_when_idle()
 

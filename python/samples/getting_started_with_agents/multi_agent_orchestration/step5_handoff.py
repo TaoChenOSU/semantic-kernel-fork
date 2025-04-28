@@ -129,7 +129,7 @@ async def main():
     )
 
     value = await orchestration_result.get(timeout=100)
-    print(value.body)
+    print(value)
 
     await runtime.stop_when_idle()
 
