@@ -41,7 +41,8 @@ def agents() -> list[ChatCompletionAgent]:
         instructions=(
             "You're a farmer from Southeast Asia. "
             "Your life is deeply connected to land and family. "
-            "You value tradition and sustainability."
+            "You value tradition and sustainability. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -51,7 +52,8 @@ def agents() -> list[ChatCompletionAgent]:
         instructions=(
             "You're a software developer from the United States. "
             "Your life is fast-paced and technology-driven. "
-            "You value innovation, freedom, and work-life balance."
+            "You value innovation, freedom, and work-life balance. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -61,7 +63,8 @@ def agents() -> list[ChatCompletionAgent]:
         instructions=(
             "You're a retired history teacher from Eastern Europe. "
             "You bring historical and philosophical perspectives to discussions. "
-            "You value legacy, learning, and cultural continuity."
+            "You value legacy, learning, and cultural continuity. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -70,7 +73,8 @@ def agents() -> list[ChatCompletionAgent]:
         description="A young activist from South America.",
         instructions=(
             "You're a young activist from South America. "
-            "You focus on social justice, environmental rights, and generational change."
+            "You focus on social justice, environmental rights, and generational change. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -79,7 +83,8 @@ def agents() -> list[ChatCompletionAgent]:
         description="A spiritual leader from the Middle East.",
         instructions=(
             "You're a spiritual leader from the Middle East. "
-            "You provide insights grounded in religion, morality, and community service."
+            "You provide insights grounded in religion, morality, and community service. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -88,7 +93,8 @@ def agents() -> list[ChatCompletionAgent]:
         description="An artist from Africa.",
         instructions=(
             "You're an artist from Africa. "
-            "You view life through creative expression, storytelling, and collective memory."
+            "You view life through creative expression, storytelling, and collective memory. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -98,7 +104,8 @@ def agents() -> list[ChatCompletionAgent]:
         instructions=(
             "You're an immigrant entrepreneur from Asia living in Canada. "
             "You balance trandition with adaption. "
-            "You focus on family success, risk, and opportunity."
+            "You focus on family success, risk, and opportunity. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -107,7 +114,8 @@ def agents() -> list[ChatCompletionAgent]:
         description="A doctor from Scandinavia.",
         instructions=(
             "You're a doctor from Scandinavia. "
-            "Your perspective is shaped by public health, equity, and structured societal support."
+            "Your perspective is shaped by public health, equity, and structured societal support. "
+            "You are in a debate. Feel free to challenge the other participants with respect."
         ),
         service=OpenAIChatCompletion(),
     )
@@ -174,14 +182,18 @@ class ChatCompletionGroupChatManager(GroupChatManager):
 
         self.current_round += 1
 
-        chat_history.add_message(
+        chat_history.messages.insert(
+            0,
             ChatMessageContent(
                 role=AuthorRole.SYSTEM,
                 content=await self._render_prompt(
                     self.termination_prompt,
                     KernelArguments(topic=self.topic),
                 ),
-            )
+            ),
+        )
+        chat_history.add_message(
+            ChatMessageContent(role=AuthorRole.USER, content="Determine if the discussion should end."),
         )
 
         response = await self.service.get_chat_message_content(
@@ -189,7 +201,13 @@ class ChatCompletionGroupChatManager(GroupChatManager):
             settings=PromptExecutionSettings(response_format=BoolWithReason),
         )
 
-        return BoolWithReason.model_validate_json(response.content)
+        termination_with_reason = BoolWithReason.model_validate_json(response.content)
+
+        print("*********************")
+        print(f"Should terminate: {termination_with_reason.value}\nReason: {termination_with_reason.reason}.")
+        print("*********************")
+
+        return termination_with_reason
 
     @override
     async def select_next_agent(
@@ -198,7 +216,8 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         participant_descriptions: dict[str, str],
     ) -> StringWithReason:
         """Select the next agent to speak."""
-        chat_history.add_message(
+        chat_history.messages.insert(
+            0,
             ChatMessageContent(
                 role=AuthorRole.SYSTEM,
                 content=await self._render_prompt(
@@ -208,7 +227,10 @@ class ChatCompletionGroupChatManager(GroupChatManager):
                         participants="\n".join([f"{k}: {v}" for k, v in participant_descriptions.items()]),
                     ),
                 ),
-            )
+            ),
+        )
+        chat_history.add_message(
+            ChatMessageContent(role=AuthorRole.USER, content="Now select the next participant to speak."),
         )
 
         response = await self.service.get_chat_message_content(
@@ -217,6 +239,10 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         )
 
         participant_name_with_reason = StringWithReason.model_validate_json(response.content)
+
+        print("*********************")
+        print(f"Next participant: {participant_name_with_reason.value}\nReason: {participant_name_with_reason.reason}.")
+        print("*********************")
 
         if participant_name_with_reason.value in participant_descriptions:
             return participant_name_with_reason
@@ -232,18 +258,22 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         if not chat_history.messages:
             raise RuntimeError("No messages in the chat history.")
 
-        chat_history_clone = chat_history.model_copy(deep=True)
-        chat_history_clone.add_message(
+        chat_history.messages.insert(
+            0,
             ChatMessageContent(
                 role=AuthorRole.SYSTEM,
                 content=await self._render_prompt(
                     self.result_filter_prompt,
                     KernelArguments(topic=self.topic),
                 ),
-            )
+            ),
         )
+        chat_history.add_message(
+            ChatMessageContent(role=AuthorRole.USER, content="Please summarize the discussion."),
+        )
+
         response = await self.service.get_chat_message_content(
-            chat_history_clone,
+            chat_history,
             settings=PromptExecutionSettings(response_format=StringWithReason),
         )
         string_with_reason = StringWithReason.model_validate_json(response.content)
@@ -281,7 +311,7 @@ async def main():
         runtime=runtime,
     )
 
-    value = await orchestration_result.get(timeout=100)
+    value = await orchestration_result.get()
     print(value)
 
     await runtime.stop_when_idle()
