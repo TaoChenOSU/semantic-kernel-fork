@@ -1,134 +1,134 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import logging
-from enum import Enum
 
 from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
+from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
-from semantic_kernel.kernel_pydantic import KernelBaseModel
-
-logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
-logging.getLogger("semantic_kernel.agents.orchestration.handoffs").setLevel(
-    logging.DEBUG
-)  # Enable DEBUG for concurrent pattern
 
 
-class GitHubLabels(Enum):
-    """Enum representing GitHub labels."""
-
-    PYTHON = "python"
-    DOTNET = ".NET"
-    BUG = "bug"
-    ENHANCEMENT = "enhancement"
-    QUESTION = "question"
-    VECTORSTORE = "vectorstore"
-    AGENT = "agent"
-
-
-class GithubIssue(KernelBaseModel):
-    """Model representing a GitHub issue."""
-
-    id: str
-    title: str
-    body: str
-    labels: list[str] = []
-
-
-class GithubPlugin:
-    """Plugin for GitHub related operations."""
-
+class UserPlugin:
     @kernel_function
-    async def add_labels(self, issue_id: str, labels: list[GitHubLabels]) -> None:
-        """Add labels to a GitHub issue."""
-        await asyncio.sleep(1)  # Simulate network delay
+    def interact_with_user(self, your_name: str, prompt_to_user: str) -> str:
+        """Ask the user for clarification on an issue."""
+        # Simulate asking the user for clarification and getting a response
+        print(f"{your_name}: {prompt_to_user}")
+        return input("User:> ")
+
+
+class OrderStatusPlugin:
+    @kernel_function
+    def check_order_status(self, order_id: str) -> str:
+        """Check the status of an order."""
+        # Simulate checking the order status
+        return f"Order {order_id} is shipped and will arrive in 2-3 days."
+
+
+class OrderRefundPlugin:
+    @kernel_function
+    def process_refund(self, order_id: str, reason: str) -> str:
+        """Process a refund for an order."""
+        # Simulate processing a refund
+        print(f"Processing refund for order {order_id} due to: {reason}")
+        return f"Refund for order {order_id} has been processed successfully."
+
+
+class OrderReturnPlugin:
+    @kernel_function
+    def process_return(self, order_id: str, reason: str) -> str:
+        """Process a return for an order."""
+        # Simulate processing a return
+        print(f"Processing return for order {order_id} due to: {reason}")
+        return f"Return for order {order_id} has been processed successfully."
 
 
 async def main():
     """Main function to run the agents."""
-    triage_agent = ChatCompletionAgent(
+    support_agent = ChatCompletionAgent(
         name="TriageAgent",
-        description="An agent that triages GitHub issues",
-        instructions="Given a GitHub issue, triage it.",
+        description="A customer support agent that triages issues.",
+        instructions="Handle customer requests.",
         service=OpenAIChatCompletion(),
+        plugins=[UserPlugin()],
+        function_choice_behavior=FunctionChoiceBehavior.Required(),
     )
-    python_agent = ChatCompletionAgent(
-        name="PythonAgent",
-        description="An agent that handles Python related issues",
-        instructions="You are an agent that handles Python related GitHub issues.",
+
+    refund_agent = ChatCompletionAgent(
+        name="RefundAgent",
+        description="A customer support agent that handles refunds.",
+        instructions="Handle refund requests.",
         service=OpenAIChatCompletion(),
-        plugins=[GithubPlugin()],
+        plugins=[UserPlugin(), OrderRefundPlugin()],
+        function_choice_behavior=FunctionChoiceBehavior.Required(),
     )
-    dotnet_agent = ChatCompletionAgent(
-        name="DotNetAgent",
-        description="An agent that handles .NET related issues",
-        instructions="You are an agent that handles .NET related GitHub issues.",
+
+    order_status_agent = ChatCompletionAgent(
+        name="OrderStatusAgent",
+        description="A customer support agent that checks order status.",
+        instructions="Handle order status requests.",
         service=OpenAIChatCompletion(),
-        plugins=[GithubPlugin()],
+        plugins=[UserPlugin(), OrderStatusPlugin()],
+        function_choice_behavior=FunctionChoiceBehavior.Required(),
+    )
+
+    order_return_agent = ChatCompletionAgent(
+        name="OrderReturnAgent",
+        description="A customer support agent that handles order returns.",
+        instructions="Handle order return requests.",
+        service=OpenAIChatCompletion(),
+        plugins=[UserPlugin(), OrderReturnPlugin()],
+        function_choice_behavior=FunctionChoiceBehavior.Required(),
     )
 
     handoff_orchestration = HandoffOrchestration(
-        members=[triage_agent, python_agent, dotnet_agent],
+        members=[support_agent, refund_agent, order_status_agent, order_return_agent],
         handoffs={
-            triage_agent.name: [
+            support_agent.name: [
                 HandoffConnection(
-                    agent_name=python_agent.name,
-                    description="Transfer to this agent if the issue is Python related",
+                    agent_name=refund_agent.name,
+                    description="Transfer to this agent if the issue is refund related",
                 ),
                 HandoffConnection(
-                    agent_name=dotnet_agent.name,
-                    description="Transfer to this agent if the issue is .NET related",
+                    agent_name=order_status_agent.name,
+                    description="Transfer to this agent if the issue is order status related",
                 ),
-            ]
+                HandoffConnection(
+                    agent_name=order_return_agent.name,
+                    description="Transfer to this agent if the issue is order return related",
+                ),
+            ],
+            refund_agent.name: [
+                HandoffConnection(
+                    agent_name=support_agent.name,
+                    description="Transfer to this agent if the issue is not refund related",
+                )
+            ],
+            order_status_agent.name: [
+                HandoffConnection(
+                    agent_name=support_agent.name,
+                    description="Transfer to this agent if the issue is not order status related",
+                )
+            ],
+            order_return_agent.name: [
+                HandoffConnection(
+                    agent_name=support_agent.name,
+                    description="Transfer to this agent if the issue is not order return related",
+                )
+            ],
         },
-    )
-
-    github_issue = GithubIssue(
-        id="12345",
-        title=(
-            "Bug: SQLite Error 1: 'ambiguous column name:' when including VectorStoreRecordKey in "
-            "VectorSearchOptions.Filter"
-        ),
-        body=(
-            "Describe the bug"
-            "When using column names marked as [VectorStoreRecordData(IsFilterable = true)] in "
-            "VectorSearchOptions.Filter, the query runs correctly."
-            "However, using the column name marked as [VectorStoreRecordKey] in VectorSearchOptions.Filter, the query "
-            "throws exception 'SQLite Error 1: ambiguous column name: StartUTC"
-            ""
-            "To Reproduce"
-            "Add a filter for the column marked [VectorStoreRecordKey]. Since that same column exists in both the "
-            "vec_TestTable and TestTable, the data for both columns cannot be returned."
-            ""
-            "Expected behavior"
-            "The query should explicitly list the vec_TestTable column names to retrieve and should omit the "
-            "[VectorStoreRecordKey] column since it will be included in the primary TestTable columns."
-            ""
-            "Platform"
-            ""
-            "Microsoft.SemanticKernel.Connectors.Sqlite v1.46.0-preview"
-            "Additional context"
-            "Normal DBContext logging shows only normal context queries. Queries run by VectorizedSearchAsync() don't "
-            "appear in those logs and I could not find a way to enable logging in semantic search so that I could "
-            "actually see the exact query that is failing. It would have been very useful to see the failing semantic "
-            "query."
-        ),
-        labels=[],
     )
 
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await handoff_orchestration.invoke(
-        task=github_issue.model_dump_json(),
-        runtime=runtime,
-    )
+    # TODO(@taochen): This is not working as expected.
+    orchestration_result = await handoff_orchestration.invoke(task="A customer is on the line.", runtime=runtime)
 
-    value = await orchestration_result.get(timeout=100)
+    value = await orchestration_result.get()
     print(value)
 
     await runtime.stop_when_idle()

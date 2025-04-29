@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import logging
 
 from autogen_core import SingleThreadedAgentRuntime
 
@@ -12,11 +11,12 @@ from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_pro
     OpenAIPromptExecutionSettings,
 )
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
+from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
-logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
-logging.getLogger("semantic_kernel.agents.orchestration.magentic_one").setLevel(
-    logging.DEBUG
-)  # Enable DEBUG for group chat pattern
+
+def observer_function(message: ChatMessageContent) -> None:
+    """Observer function to print the messages from the agents."""
+    print(f"**{message.name}**\n{message.content}")
 
 
 async def main():
@@ -49,8 +49,8 @@ async def main():
         manager=MagenticOneManager(
             chat_completion_service=OpenAIChatCompletion(),
             prompt_execution_settings=OpenAIPromptExecutionSettings(),
-            participant_descriptions={agent.name: agent.description for agent in [research_agent, coder_agent]},
         ),
+        observer=observer_function,
     )
 
     runtime = SingleThreadedAgentRuntime()
@@ -60,12 +60,12 @@ async def main():
         task=(
             "What are the 50 tallest buildings in the world? Create a table with their names"
             " and heights grouped by country with a column of the average height of the buildings"
-            " in each country"
+            " in each country."
         ),
         runtime=runtime,
     )
 
-    value = await orchestration_result.get(timeout=100)
+    value = await orchestration_result.get()
     print(value)
 
     await runtime.stop_when_idle()

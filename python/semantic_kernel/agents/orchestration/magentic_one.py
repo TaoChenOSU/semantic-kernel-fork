@@ -461,25 +461,6 @@ class MagenticOneAgentActor(AgentActorBase):
     """An agent actor that process messages in a Magentic One group chat."""
 
     @message_handler
-    async def _handle_start_message(self, message: MagenticOneStartMessage, ctx: MessageContext) -> None:
-        """Handle the start message for the Magentic One group chat."""
-        logger.debug(f"{self.id}: Received Magentic One start message.")
-        if isinstance(message.body, ChatMessageContent):
-            if self._agent_thread:
-                await self._agent_thread.on_new_message(message.body)
-            else:
-                self._chat_history.add_message(message.body)
-        elif isinstance(message.body, list) and all(isinstance(m, ChatMessageContent) for m in message.body):
-            if self._agent_thread:
-                for m in message.body:
-                    await self._agent_thread.on_new_message(m)
-            else:
-                for m in message.body:
-                    self._chat_history.add_message(m)
-        else:
-            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
-
-    @message_handler
     async def _handle_response_message(self, message: MagenticOneResponseMessage, ctx: MessageContext) -> None:
         logger.debug(f"{self.id}: Received response message.")
         if self._agent_thread is not None:
@@ -526,6 +507,7 @@ class MagenticOneAgentActor(AgentActorBase):
             response_item = await self._agent.get_response(messages=new_message, thread=self._agent_thread)
 
         logger.debug(f"{self.id} responded with {response_item.message.content}.")
+        await self._notify_observer(response_item.message)
 
         await self.publish_message(
             MagenticOneResponseMessage(body=response_item.message),
@@ -559,6 +541,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
         | None = None,
         output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the Magentic One orchestration.
 
@@ -569,6 +552,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
+            observer (Callable | None): A function that is called when a response is produced by the agents.
         """
         self._manager = manager
 
@@ -578,6 +562,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
+            observer=observer,
         )
 
     @override
@@ -624,7 +609,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             MagenticOneAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: MagenticOneAgentActor(agent, internal_topic_type),
+                lambda agent=agent: MagenticOneAgentActor(agent, internal_topic_type, self._observer),
             )
             for agent in self._members
         ])

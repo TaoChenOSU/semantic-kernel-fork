@@ -170,7 +170,7 @@ class FunctionChoiceBehavior(KernelBaseModel):
         based on either the specified filters or the full qualified names. The model is required to use one of the
         provided functions to complete a given task/query.
         """
-        kwargs.setdefault("maximum_auto_invoke_attempts", 1 if auto_invoke else 0)
+        kwargs.setdefault("maximum_auto_invoke_attempts", DEFAULT_MAX_AUTO_INVOKE_ATTEMPTS if auto_invoke else 0)
         return cls(
             type_=FunctionChoiceType.REQUIRED,
             filters=filters,

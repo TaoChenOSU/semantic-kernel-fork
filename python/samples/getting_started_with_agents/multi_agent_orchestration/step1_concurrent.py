@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import logging
 
 from autogen_core import SingleThreadedAgentRuntime
 
@@ -9,11 +8,6 @@ from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCom
 from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
-
-logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
-logging.getLogger("semantic_kernel.agents.orchestration.concurrent").setLevel(
-    logging.DEBUG
-)  # Enable DEBUG for concurrent pattern
 
 
 async def main():

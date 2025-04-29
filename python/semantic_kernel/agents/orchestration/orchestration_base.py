@@ -78,6 +78,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
         | None = None,
         output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the orchestration base.
 
@@ -87,6 +88,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
+            observer (Callable | None): A function that is called when a response is produced by the agents.
         """
         if not members:
             raise ValueError("The members list cannot be empty.")
@@ -97,6 +99,8 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
 
         self._input_transform = input_transform or self._default_input_transform
         self._output_transform = output_transform or self._default_output_transform
+
+        self._observer = observer
 
     def _set_types(self) -> None:
         """Set the external input and output types from the class arguments.
@@ -268,7 +272,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         Returns:
             TExternalOut: The transformed output message.
         """
-        if self.t_external_out == DefaultExternalTypeAlias:
+        if self.t_external_out == DefaultExternalTypeAlias or self.t_external_out in get_args(DefaultExternalTypeAlias):
             if isinstance(output_message, ChatMessageContent) or (
                 isinstance(output_message, list)
                 and all(isinstance(item, ChatMessageContent) for item in output_message)

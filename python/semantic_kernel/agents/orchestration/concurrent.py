@@ -42,10 +42,16 @@ class ConcurrentResponseMessage(KernelBaseModel):
 class ConcurrentAgentActor(AgentActorBase):
     """A agent actor for concurrent agents that process tasks."""
 
-    def __init__(self, agent: Agent, internal_topic_type: str, collection_agent_type: str) -> None:
+    def __init__(
+        self,
+        agent: Agent,
+        internal_topic_type: str,
+        collection_agent_type: str,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+    ) -> None:
         """Initialize the agent actor."""
         self._collection_agent_type = collection_agent_type
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
 
     @message_handler
     async def _handle_message(self, message: ConcurrentRequestMessage, ctx: MessageContext) -> None:
@@ -55,6 +61,8 @@ class ConcurrentAgentActor(AgentActorBase):
         response = await self._agent.get_response(messages=message.body)
 
         logger.debug(f"Concurrent actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
+
+        await self._notify_observer(response.message)
 
         target_actor_id = await self.runtime.get(self._collection_agent_type)
         await self.send_message(ConcurrentResponseMessage(body=response.message), target_actor_id)
@@ -143,6 +151,7 @@ class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     agent,
                     internal_topic_type,
                     collection_agent_type=self._get_collection_actor_type(internal_topic_type),
+                    observer=self._observer,
                 ),
             )
 

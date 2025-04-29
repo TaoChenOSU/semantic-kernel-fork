@@ -69,13 +69,6 @@ class HandoffResponseMessage(KernelBaseModel):
 HANDOFF_PLUGIN_NAME = "Handoff"
 
 
-async def _handoff_function_filter(context: AutoFunctionInvocationContext, next):
-    """A filter to terminate an agent when it decides to handoff the conversation to another agent."""
-    await next(context)
-    if context.function.plugin_name == HANDOFF_PLUGIN_NAME:
-        context.terminate = True
-
-
 # endregion Messages and Types
 
 # region HandoffAgentActor
@@ -90,6 +83,7 @@ class HandoffAgentActor(AgentActorBase):
         internal_topic_type: str,
         handoff_topic_connections: list[HandoffConnection],
         result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the handoff agent actor."""
         self._handoff_topic_connections = handoff_topic_connections
@@ -98,7 +92,7 @@ class HandoffAgentActor(AgentActorBase):
         self._kernel = agent.kernel.model_copy()
         self._add_handoff_functions()
 
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
 
     def _add_handoff_functions(self):
         """Add handoff functions to the agent's kernel."""
@@ -133,7 +127,7 @@ class HandoffAgentActor(AgentActorBase):
             )
         functions.append(KernelFunctionFromMethod(self._end_task, plugin_name=HANDOFF_PLUGIN_NAME))
         self._kernel.add_plugin(plugin=KernelPlugin(name=HANDOFF_PLUGIN_NAME, functions=functions))
-        self._kernel.add_filter(FilterTypes.AUTO_FUNCTION_INVOCATION, _handoff_function_filter)
+        self._kernel.add_filter(FilterTypes.AUTO_FUNCTION_INVOCATION, self._handoff_function_filter)
 
     async def _handoff_to_agent(self, agent_name: str) -> None:
         """Handoff the conversation to another agent."""
@@ -142,6 +136,12 @@ class HandoffAgentActor(AgentActorBase):
             HandoffRequestMessage(agent_name=agent_name),
             TopicId(self._internal_topic_type, self.id.key),
         )
+
+    async def _handoff_function_filter(self, context: AutoFunctionInvocationContext, next):
+        """A filter to terminate an agent when it decides to handoff the conversation to another agent."""
+        await next(context)
+        if context.function.plugin_name == HANDOFF_PLUGIN_NAME:
+            context.terminate = True
 
     @kernel_function(description="End the task with a summary when needed.")
     async def _end_task(self, task_summary: str) -> None:
@@ -221,11 +221,13 @@ class HandoffAgentActor(AgentActorBase):
             if self._agent_thread is None:
                 self._agent_thread = response_item.thread
 
+            await self._notify_observer(response_item.message)
+
             if response_item.message.role == AuthorRole.ASSISTANT:
-                # The response can potentially be a TOOL message since we have added
-                # a filter which will terminate the conversation when a function from
-                # the handoff plugin is called. And we don't want to publish that message.
-                # So we only publish if the response is an ASSISTANT message.
+                # The response can potentially be a TOOL message from the Handoff plugin
+                # since we have added a filter which will terminate the conversation when
+                # a function from the handoff plugin is called. And we don't want to publish
+                # that message. So we only publish if the response is an ASSISTANT message.
                 logger.debug(f"{self.id} responded with: {response_item.message.content}")
 
                 await self.publish_message(
@@ -251,6 +253,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
         | None = None,
         output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the handoff orchestration.
 
@@ -263,6 +266,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
+            observer (Callable | None): A function that is called when a response is produced by the agents.
         """
         self._handoffs = handoffs
 
@@ -272,6 +276,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
+            observer=observer,
         )
 
     @override
@@ -333,6 +338,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     internal_topic_type,
                     handoff_connections,
                     result_callback=result_callback,
+                    observer=self._observer,
                 ),
             )
 

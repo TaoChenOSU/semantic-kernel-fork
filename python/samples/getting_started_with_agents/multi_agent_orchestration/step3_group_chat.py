@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import logging
 import sys
 
 from autogen_core import SingleThreadedAgentRuntime
@@ -29,11 +28,6 @@ if sys.version_info >= (3, 12):
     from typing import override  # pragma: no cover
 else:
     from typing_extensions import override  # pragma: no cover
-
-logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
-logging.getLogger("semantic_kernel.agents.orchestration.group_chat").setLevel(
-    logging.DEBUG
-)  # Enable DEBUG for group chat pattern
 
 
 def agents() -> list[ChatCompletionAgent]:
@@ -260,6 +254,11 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         )
 
 
+def observer_function(message: ChatMessageContent) -> None:
+    """Observer function to print the messages from the agents."""
+    print(f"**{message.name}**\n{message.content}")
+
+
 async def main():
     """Main function to run the agents."""
     topic = "What does a good life mean to you personally?"
@@ -271,6 +270,7 @@ async def main():
             service=OpenAIChatCompletion(),
             max_rounds=10,
         ),
+        observer=observer_function,
     )
 
     runtime = SingleThreadedAgentRuntime()

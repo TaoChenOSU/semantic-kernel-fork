@@ -41,10 +41,16 @@ class SequentialResultMessage(KernelBaseModel):
 class SequentialAgentActor(AgentActorBase):
     """A agent actor for sequential agents that process tasks."""
 
-    def __init__(self, agent: Agent, internal_topic_type: str, next_agent_type: str) -> None:
+    def __init__(
+        self,
+        agent: Agent,
+        internal_topic_type: str,
+        next_agent_type: str,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+    ) -> None:
         """Initialize the agent actor."""
         self._next_agent_type = next_agent_type
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type)
+        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
 
     @message_handler
     async def _handle_message(self, message: SequentialRequestMessage, ctx: MessageContext) -> None:
@@ -54,6 +60,8 @@ class SequentialAgentActor(AgentActorBase):
         response = await self._agent.get_response(messages=message.body)
 
         logger.debug(f"Sequential actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
+
+        await self._notify_observer(response)
 
         target_actor_id = await self.runtime.get(self._next_agent_type)
         await self.send_message(SequentialRequestMessage(body=response.message), target_actor_id)
@@ -131,6 +139,7 @@ class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     agent,
                     internal_topic_type,
                     next_agent_type=next_actor_type,
+                    observer=self._observer,
                 ),
             )
             logger.debug(f"Registered agent actor of type {self._get_agent_actor_type(agent, internal_topic_type)}")

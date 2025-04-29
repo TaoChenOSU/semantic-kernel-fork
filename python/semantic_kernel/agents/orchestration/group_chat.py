@@ -150,6 +150,7 @@ class GroupChatAgentActor(AgentActorBase):
             response_item = await self._agent.get_response(messages=new_message, thread=self._agent_thread)
 
         logger.debug(f"{self.id} responded with {response_item.message.content}.")
+        await self._notify_observer(response_item.message)
 
         await self.publish_message(
             GroupChatResponseMessage(body=response_item.message),
@@ -281,7 +282,15 @@ class GroupChatManagerActor(RoutedAgent):
         participant_descriptions: dict[str, str],
         result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
     ):
-        """Initialize the group chat manager actor."""
+        """Initialize the group chat manager actor.
+
+        Args:
+            manager (GroupChatManager): The group chat manager that manages the flow of the group chat.
+            internal_topic_type (str): The topic type of the internal topic.
+            participant_descriptions (dict[str, str]): The descriptions of the participants in the group chat.
+            observer (Callable | None): A function that is called when a response is produced by the agents.
+            result_callback (Callable | None): A function that is called when the group chat manager produces a result.
+        """
         self._manager = manager
         self._internal_topic_type = internal_topic_type
         self._chat_history = ChatHistory()
@@ -378,6 +387,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
         | None = None,
         output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
+        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the group chat orchestration.
 
@@ -389,6 +399,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
+            observer (Callable | None): A function that is called when a response is produced by the agents.
         """
         self._manager = manager
 
@@ -398,6 +409,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
+            observer=observer,
         )
 
     @override
@@ -444,7 +456,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             GroupChatAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type),
+                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type, self._observer),
             )
             for agent in self._members
         ])
