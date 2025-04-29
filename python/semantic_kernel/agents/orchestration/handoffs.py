@@ -7,7 +7,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from functools import partial
 
-from autogen_core import AgentRuntime, MessageContext, TopicId, TypeSubscription, message_handler
+from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicId, TypeSubscription, message_handler
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
@@ -233,6 +233,7 @@ class HandoffAgentActor(AgentActorBase):
                 await self.publish_message(
                     HandoffResponseMessage(body=response_item.message),
                     TopicId(self._internal_topic_type, self.id.key),
+                    cancellation_token=cts.cancellation_token,
                 )
 
 
@@ -285,6 +286,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the handoff pattern.
 
@@ -297,13 +299,21 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
 
         async def send_start_message(agent: Agent) -> None:
             target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))
-            await runtime.send_message(HandoffStartMessage(body=task), target_actor_id)
+            await runtime.send_message(
+                HandoffStartMessage(body=task),
+                target_actor_id,
+                cancellation_token=task.cancellation_token,
+            )
 
         await asyncio.gather(*[send_start_message(agent) for agent in self._members])
 
         # Send the handoff request message to the first agent in the list
         target_actor_id = await runtime.get(self._get_agent_actor_type(self._members[0], internal_topic_type))
-        await runtime.send_message(HandoffRequestMessage(agent_name=self._members[0].name), target_actor_id)
+        await runtime.send_message(
+            HandoffRequestMessage(agent_name=self._members[0].name),
+            target_actor_id,
+            cancellation_token=cancellation_token,
+        )
 
     @override
     async def _prepare(

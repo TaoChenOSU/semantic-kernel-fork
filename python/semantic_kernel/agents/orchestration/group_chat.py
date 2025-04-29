@@ -6,10 +6,10 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
+from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicId, TypeSubscription, message_handler
 
 from semantic_kernel.agents.agent import Agent
-from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
+from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import (
     DefaultExternalTypeAlias,
     OrchestrationBase,
@@ -155,6 +155,7 @@ class GroupChatAgentActor(AgentActorBase):
         await self.publish_message(
             GroupChatResponseMessage(body=response_item.message),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=ctx.cancellation_token,
         )
 
 
@@ -272,7 +273,7 @@ class RoundRobinGroupChatManager(GroupChatManager):
 # region GroupChatManagerActor
 
 
-class GroupChatManagerActor(RoutedAgent):
+class GroupChatManagerActor(ActorBase):
     """A group chat manager actor."""
 
     def __init__(
@@ -311,7 +312,7 @@ class GroupChatManagerActor(RoutedAgent):
         else:
             raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
 
-        await self._determine_state_and_take_action()
+        await self._determine_state_and_take_action(ctx.cancellation_token)
 
     @message_handler
     async def _handle_response_message(self, message: GroupChatResponseMessage, ctx: MessageContext) -> None:
@@ -324,9 +325,9 @@ class GroupChatManagerActor(RoutedAgent):
             )
         self._chat_history.add_message(message.body)
 
-        await self._determine_state_and_take_action()
+        await self._determine_state_and_take_action(ctx.cancellation_token)
 
-    async def _determine_state_and_take_action(self) -> None:
+    async def _determine_state_and_take_action(self, cancellation_token: CancellationToken) -> None:
         """Determine the state of the group chat and take action accordingly."""
         # User input state
         should_request_user_input = await self._manager.should_request_user_input(
@@ -340,6 +341,7 @@ class GroupChatManagerActor(RoutedAgent):
                 await self.publish_message(
                     GroupChatResponseMessage(body=ChatMessageContent(role=AuthorRole.USER, content=user_input)),
                     TopicId(self._internal_topic_type, self.id.key),
+                    cancellation_token=cancellation_token,
                 )
                 logger.debug("User input received and added to chat history.")
 
@@ -367,6 +369,7 @@ class GroupChatManagerActor(RoutedAgent):
         await self.publish_message(
             GroupChatRequestMessage(agent_name=next_agent.value),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=cancellation_token,
         )
 
 
@@ -418,6 +421,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the group chat process.
 
@@ -430,13 +434,21 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
 
         async def send_start_message(agent: Agent) -> None:
             target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))
-            await runtime.send_message(GroupChatStartMessage(body=task), target_actor_id)
+            await runtime.send_message(
+                GroupChatStartMessage(body=task),
+                target_actor_id,
+                cancellation_token=cancellation_token,
+            )
 
         await asyncio.gather(*[send_start_message(agent) for agent in self._members])
 
         # Send the start message to the manager actor
         target_actor_id = await runtime.get(self._get_manager_actor_type(internal_topic_type))
-        await runtime.send_message(GroupChatStartMessage(body=task), target_actor_id)
+        await runtime.send_message(
+            GroupChatStartMessage(body=task),
+            target_actor_id,
+            cancellation_token=cancellation_token,
+        )
 
     @override
     async def _prepare(

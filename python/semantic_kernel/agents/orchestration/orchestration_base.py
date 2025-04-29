@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Generic, Union, get_args
 
-from autogen_core import AgentRuntime
+from autogen_core import AgentRuntime, CancellationToken
 from pydantic import Field
 from typing_extensions import TypeVar
 
@@ -42,6 +42,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
 
     value: TExternalOut | None = None
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
+    cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
     async def get(self, timeout: int | None = None) -> TExternalOut:
         """Get the result of the orchestration.
@@ -52,16 +53,35 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
         Returns:
             TExternalOut: The result of the orchestration.
         """
-        # TODO(@taochen): Cancel the task if timeout is reached.
         # TODO(@taochen): Cancel the task is an exception is raised inside the orchestration.
-        if timeout is not None:
-            await asyncio.wait_for(self.event.wait(), timeout=timeout)
-        else:
-            await self.event.wait()
+        try:
+            if timeout is not None:
+                await asyncio.wait_for(self.event.wait(), timeout=timeout)
+            else:
+                await self.event.wait()
+        except asyncio.TimeoutError:
+            self.cancellation_token.cancel()
+            raise RuntimeError(f"The orchestration timed out after {timeout} seconds.")
 
         if self.value is None:
+            if self.cancellation_token.is_cancelled():
+                raise RuntimeError("The orchestration was canceled before it could complete.")
             raise RuntimeError("Result is None. An error may have occurred during the invocation.")
         return self.value
+
+    def cancel(self) -> None:
+        """Cancel the orchestration.
+
+        This method will cancel the orchestration and set the cancellation token.
+        Actors that have received messages will continue to process them, but no new messages will be sent.
+        """
+        if self.cancellation_token.is_cancelled():
+            raise RuntimeError("The orchestration has already been canceled.")
+        if self.event.is_set():
+            raise RuntimeError("The orchestration has already been completed.")
+
+        self.cancellation_token.cancel()
+        self.event.set()
 
 
 class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
@@ -196,7 +216,14 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             else:
                 prepared_task: DefaultExternalTypeAlias = self._input_transform(task)
 
-        task = asyncio.create_task(self._start(prepared_task, runtime, internal_topic_type))
+        asyncio.create_task(  # noqa: RUF006
+            self._start(
+                prepared_task,
+                runtime,
+                internal_topic_type,
+                orchestration_result.cancellation_token,
+            )
+        )
         return orchestration_result
 
     @abstractmethod
@@ -205,6 +232,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the multi-agent orchestration.
 
@@ -212,6 +240,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             task (ChatMessageContent | list[ChatMessageContent]): The task to be executed by the agents.
             runtime (AgentRuntime): The runtime environment for the agents.
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
+            cancellation_token (CancellationToken): The cancellation token for the orchestration.
         """
         pass
 

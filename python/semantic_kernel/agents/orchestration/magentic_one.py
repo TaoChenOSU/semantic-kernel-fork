@@ -5,10 +5,10 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
+from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicId, TypeSubscription, message_handler
 
 from semantic_kernel.agents.agent import Agent
-from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
+from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import (
     DefaultExternalTypeAlias,
     OrchestrationBase,
@@ -279,7 +279,7 @@ class MagenticOneManager(KernelBaseModel):
 # region MagenticOneManagerActor
 
 
-class MagenticOneManagerActor(RoutedAgent):
+class MagenticOneManagerActor(ActorBase):
     """Actor for the Magentic One manager."""
 
     def __init__(
@@ -322,7 +322,7 @@ class MagenticOneManagerActor(RoutedAgent):
             self._participant_descriptions,
         )
 
-        await self._run_outer_loop()
+        await self._run_outer_loop(ctx.cancellation_token)
 
     @message_handler
     async def _handle_response_message(self, message: MagenticOneResponseMessage, ctx: MessageContext) -> None:
@@ -336,9 +336,9 @@ class MagenticOneManagerActor(RoutedAgent):
         self._chat_history.add_message(message.body)
 
         logger.debug(f"{self.id}: Running inner loop.")
-        await self._run_inner_loop()
+        await self._run_inner_loop(ctx.cancellation_token)
 
-    async def _run_outer_loop(self):
+    async def _run_outer_loop(self, cancellation_token: CancellationToken) -> None:
         # 1. Create a task ledger.
         task_ledger = await self._manager.create_task_ledger(
             self._task,
@@ -365,12 +365,13 @@ class MagenticOneManagerActor(RoutedAgent):
                 body=self._chat_history.messages[-1],
             ),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=cancellation_token,
         )
 
         # 3. Start the inner loop.
-        await self._run_inner_loop()
+        await self._run_inner_loop(cancellation_token)
 
-    async def _run_inner_loop(self) -> None:
+    async def _run_inner_loop(self, cancellation_token: CancellationToken) -> None:
         self._round_count += 1
 
         # 1. Create a progress ledger
@@ -401,9 +402,9 @@ class MagenticOneManagerActor(RoutedAgent):
                 self._participant_descriptions,
                 old_facts=self._facts,
             )
-            await self._reset_for_outer_loop()
+            await self._reset_for_outer_loop(cancellation_token)
             logger.debug("Restarting outer loop.")
-            await self._run_outer_loop()
+            await self._run_outer_loop(cancellation_token)
             return
 
         # 2.3 Publish for next step
@@ -420,6 +421,7 @@ class MagenticOneManagerActor(RoutedAgent):
                 body=self._chat_history.messages[-1],
             ),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=cancellation_token,
         )
 
         # 2.4 Request the next speaker to speak
@@ -432,12 +434,14 @@ class MagenticOneManagerActor(RoutedAgent):
         await self.publish_message(
             MagenticOneRequestMessage(agent_name=next_speaker),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=cancellation_token,
         )
 
-    async def _reset_for_outer_loop(self) -> None:
+    async def _reset_for_outer_loop(self, cancellation_token: CancellationToken) -> None:
         await self.publish_message(
             MagenticOneResetMessage(),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=cancellation_token,
         )
         self._chat_history.clear()
         self._stall_count = 0
@@ -512,6 +516,7 @@ class MagenticOneAgentActor(AgentActorBase):
         await self.publish_message(
             MagenticOneResponseMessage(body=response_item.message),
             TopicId(self._internal_topic_type, self.id.key),
+            cancellation_token=ctx.cancellation_token,
         )
 
     @message_handler
@@ -571,6 +576,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the Magentic One pattern.
 
@@ -583,12 +589,20 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
 
         async def send_start_message(agent: Agent) -> None:
             target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))
-            await runtime.send_message(MagenticOneStartMessage(body=task), target_actor_id)
+            await runtime.send_message(
+                MagenticOneStartMessage(body=task),
+                target_actor_id,
+                cancellation_token=cancellation_token,
+            )
 
         await asyncio.gather(*[send_start_message(agent) for agent in self._members])
 
         target_actor_id = await runtime.get(self._get_manager_actor_type(internal_topic_type))
-        await runtime.send_message(MagenticOneStartMessage(body=task), target_actor_id)
+        await runtime.send_message(
+            MagenticOneStartMessage(body=task),
+            target_actor_id,
+            cancellation_token=cancellation_token,
+        )
 
     @override
     async def _prepare(

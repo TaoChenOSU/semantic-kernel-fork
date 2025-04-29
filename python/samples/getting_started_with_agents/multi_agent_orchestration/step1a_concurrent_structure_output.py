@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import logging
 import os
 
 from autogen_core import SingleThreadedAgentRuntime
@@ -11,11 +10,6 @@ from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestrat
 from semantic_kernel.agents.orchestration.tools import structure_output_transform
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.kernel_pydantic import KernelBaseModel
-
-logging.basicConfig(level=logging.WARNING)  # Set default level to WARNING
-logging.getLogger("semantic_kernel.agents.orchestration.concurrent").setLevel(
-    logging.DEBUG
-)  # Enable DEBUG for concurrent pattern
 
 
 class ArticleAnalysis(KernelBaseModel):
@@ -65,9 +59,7 @@ async def main():
 
     value = await orchestration_result.get(timeout=10)
     if isinstance(value, ArticleAnalysis):
-        print("Themes:", value.themes)
-        print("Sentiments:", value.sentiments)
-        print("Entities:", value.entities)
+        print(value.model_dump_json(indent=2))
     else:
         print("Unexpected result type:", type(value))
 

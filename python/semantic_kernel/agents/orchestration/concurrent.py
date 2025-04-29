@@ -5,7 +5,15 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, MessageContext, RoutedAgent, TopicId, TypeSubscription, message_handler
+from autogen_core import (
+    AgentRuntime,
+    CancellationToken,
+    MessageContext,
+    RoutedAgent,
+    TopicId,
+    TypeSubscription,
+    message_handler,
+)
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
@@ -65,7 +73,11 @@ class ConcurrentAgentActor(AgentActorBase):
         await self._notify_observer(response.message)
 
         target_actor_id = await self.runtime.get(self._collection_agent_type)
-        await self.send_message(ConcurrentResponseMessage(body=response.message), target_actor_id)
+        await self.send_message(
+            ConcurrentResponseMessage(body=response.message),
+            target_actor_id,
+            cancellation_token=ctx.cancellation_token,
+        )
 
 
 class CollectionActor(RoutedAgent):
@@ -105,11 +117,13 @@ class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the concurrent pattern."""
         await runtime.publish_message(
             ConcurrentRequestMessage(body=task),
             TopicId(internal_topic_type, self.__class__.__name__),
+            cancellation_token=cancellation_token,
         )
 
     @override

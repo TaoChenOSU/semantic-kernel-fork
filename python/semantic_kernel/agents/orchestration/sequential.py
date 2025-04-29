@@ -4,7 +4,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, MessageContext, RoutedAgent, message_handler
+from autogen_core import AgentRuntime, CancellationToken, MessageContext, RoutedAgent, message_handler
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
@@ -64,7 +64,11 @@ class SequentialAgentActor(AgentActorBase):
         await self._notify_observer(response)
 
         target_actor_id = await self.runtime.get(self._next_agent_type)
-        await self.send_message(SequentialRequestMessage(body=response.message), target_actor_id)
+        await self.send_message(
+            SequentialRequestMessage(body=response.message),
+            target_actor_id,
+            cancellation_token=ctx.cancellation_token,
+        )
 
 
 class CollectionActor(RoutedAgent):
@@ -96,10 +100,15 @@ class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         task: DefaultExternalTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
+        cancellation_token: CancellationToken,
     ) -> None:
         """Start the sequential pattern."""
         target_actor_id = await runtime.get(self._get_agent_actor_type(self._members[0], internal_topic_type))
-        await runtime.send_message(SequentialRequestMessage(body=task), target_actor_id)
+        await runtime.send_message(
+            SequentialRequestMessage(body=task),
+            target_actor_id,
+            cancellation_token=cancellation_token,
+        )
 
     @override
     async def _prepare(
