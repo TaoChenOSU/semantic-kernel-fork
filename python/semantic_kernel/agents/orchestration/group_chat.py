@@ -126,7 +126,7 @@ class GroupChatAgentActor(AgentActorBase):
             self._chat_history.add_message(message.body)
 
     @message_handler
-    async def _handle_chat_request_message(self, message: GroupChatRequestMessage, ctx: MessageContext) -> None:
+    async def _handle_request_message(self, message: GroupChatRequestMessage, ctx: MessageContext) -> None:
         if message.agent_name != self._agent.name:
             return
 

@@ -44,7 +44,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
     cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
-    async def get(self, timeout: int | None = None) -> TExternalOut:
+    async def get(self, timeout: float | None = None) -> TExternalOut:
         """Get the result of the orchestration.
 
         Args:
@@ -73,7 +73,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
         """Cancel the orchestration.
 
         This method will cancel the orchestration and set the cancellation token.
-        Actors that have received messages will continue to process them, but no new messages will be sent.
+        Actors that have received messages will continue to process them, but no new messages will be processed.
         """
         if self.cancellation_token.is_cancelled():
             raise RuntimeError("The orchestration has already been canceled.")

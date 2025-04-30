@@ -57,7 +57,7 @@ class AgentActorBase(ActorBase):
         # Chat history to temporarily store messages before the agent thread is created
         self._chat_history = ChatHistory()
 
-        RoutedAgent.__init__(self, description=agent.description or "Semantic Kernel Agent")
+        ActorBase.__init__(self, description=agent.description or "Semantic Kernel Agent")
 
     async def _notify_observer(
         self,
