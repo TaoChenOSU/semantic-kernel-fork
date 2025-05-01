@@ -10,12 +10,7 @@ from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicI
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
-from semantic_kernel.agents.orchestration.orchestration_base import (
-    DefaultExternalTypeAlias,
-    OrchestrationBase,
-    TExternalIn,
-    TExternalOut,
-)
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
 from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
@@ -36,7 +31,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class GroupChatStartMessage(KernelBaseModel):
     """A message type to start a group chat."""
 
-    body: DefaultExternalTypeAlias
+    body: DefaultTypeAlias
 
 
 class GroupChatRequestMessage(KernelBaseModel):
@@ -101,7 +96,7 @@ class GroupChatAgentActor(AgentActorBase):
                 for m in message.body:
                     self._chat_history.add_message(m)
         else:
-            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
+            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultTypeAlias}.")
 
     @message_handler
     async def _handle_response_message(self, message: GroupChatResponseMessage, ctx: MessageContext) -> None:
@@ -150,7 +145,7 @@ class GroupChatAgentActor(AgentActorBase):
             response_item = await self._agent.get_response(messages=new_message, thread=self._agent_thread)
 
         logger.debug(f"{self.id} responded with {response_item.message.content}.")
-        await self._notify_observer(response_item.message)
+        await self._call_agent_response_callback(response_item.message)
 
         await self.publish_message(
             GroupChatResponseMessage(body=response_item.message),
@@ -281,7 +276,7 @@ class GroupChatManagerActor(ActorBase):
         manager: GroupChatManager,
         internal_topic_type: str,
         participant_descriptions: dict[str, str],
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ):
         """Initialize the group chat manager actor.
 
@@ -289,7 +284,8 @@ class GroupChatManagerActor(ActorBase):
             manager (GroupChatManager): The group chat manager that manages the flow of the group chat.
             internal_topic_type (str): The topic type of the internal topic.
             participant_descriptions (dict[str, str]): The descriptions of the participants in the group chat.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
             result_callback (Callable | None): A function that is called when the group chat manager produces a result.
         """
         self._manager = manager
@@ -310,7 +306,7 @@ class GroupChatManagerActor(ActorBase):
             for m in message.body:
                 self._chat_history.add_message(m)
         else:
-            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
+            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultTypeAlias}.")
 
         await self._determine_state_and_take_action(ctx.cancellation_token)
 
@@ -378,7 +374,7 @@ class GroupChatManagerActor(ActorBase):
 # region GroupChatOrchestration
 
 
-class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+class GroupChatOrchestration(OrchestrationBase[TIn, TOut]):
     """A group chat multi-agent pattern orchestration."""
 
     def __init__(
@@ -387,10 +383,9 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         manager: GroupChatManager,
         name: str | None = None,
         description: str | None = None,
-        input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
-        | None = None,
-        output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
+        output_transform: Callable[[DefaultTypeAlias], Awaitable[TOut] | TOut] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the group chat orchestration.
 
@@ -402,7 +397,8 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
         """
         self._manager = manager
 
@@ -412,13 +408,13 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
-            observer=observer,
+            agent_response_callback=agent_response_callback,
         )
 
     @override
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -455,7 +451,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TExternalOut], None] | None = None,
+        result_callback: Callable[[TOut], None] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
@@ -468,7 +464,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             GroupChatAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type, self._observer),
+                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type, self._agent_response_callback),
             )
             for agent in self._members
         ])
@@ -477,7 +473,7 @@ class GroupChatOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the group chat manager."""
         await GroupChatManagerActor.register(

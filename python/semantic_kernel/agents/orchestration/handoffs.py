@@ -11,12 +11,7 @@ from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicI
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
-from semantic_kernel.agents.orchestration.orchestration_base import (
-    DefaultExternalTypeAlias,
-    OrchestrationBase,
-    TExternalIn,
-    TExternalOut,
-)
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.filters.auto_function_invocation.auto_function_invocation_context import (
@@ -51,7 +46,7 @@ class HandoffConnection(KernelBaseModel):
 class HandoffStartMessage(KernelBaseModel):
     """A start message type to kick off a handoff group chat."""
 
-    body: DefaultExternalTypeAlias
+    body: DefaultTypeAlias
 
 
 class HandoffRequestMessage(KernelBaseModel):
@@ -82,8 +77,8 @@ class HandoffAgentActor(AgentActorBase):
         agent: Agent,
         internal_topic_type: str,
         handoff_topic_connections: list[HandoffConnection],
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
+        agent_response_callback: Callable[[str | DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the handoff agent actor."""
         self._handoff_topic_connections = handoff_topic_connections
@@ -92,7 +87,11 @@ class HandoffAgentActor(AgentActorBase):
         self._kernel = agent.kernel.model_copy()
         self._add_handoff_functions()
 
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
+        super().__init__(
+            agent=agent,
+            internal_topic_type=internal_topic_type,
+            agent_response_callback=agent_response_callback,
+        )
 
     def _add_handoff_functions(self):
         """Add handoff functions to the agent's kernel."""
@@ -165,7 +164,7 @@ class HandoffAgentActor(AgentActorBase):
                 else:
                     self._chat_history.add_message(m)
         else:
-            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultExternalTypeAlias}.")
+            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {DefaultTypeAlias}.")
 
     @message_handler
     async def _handle_response_message(self, message: HandoffResponseMessage, cts: MessageContext) -> None:
@@ -221,7 +220,7 @@ class HandoffAgentActor(AgentActorBase):
             if self._agent_thread is None:
                 self._agent_thread = response_item.thread
 
-            await self._notify_observer(response_item.message)
+            await self._call_agent_response_callback(response_item.message)
 
             if response_item.message.role == AuthorRole.ASSISTANT:
                 # The response can potentially be a TOOL message from the Handoff plugin
@@ -242,7 +241,7 @@ class HandoffAgentActor(AgentActorBase):
 # region HandoffOrchestration
 
 
-class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
     """An orchestration class for managing handoff agents in a group chat."""
 
     def __init__(
@@ -251,10 +250,9 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         handoffs: dict[str, list[HandoffConnection]],
         name: str | None = None,
         description: str | None = None,
-        input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
-        | None = None,
-        output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
+        output_transform: Callable[[DefaultTypeAlias], Awaitable[TOut] | TOut] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the handoff orchestration.
 
@@ -267,7 +265,8 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
         """
         self._handoffs = handoffs
 
@@ -277,13 +276,13 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
-            observer=observer,
+            agent_response_callback=agent_response_callback,
         )
 
     @override
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -320,7 +319,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TExternalOut], None] | None = None,
+        result_callback: Callable[[TOut], None] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type, result_callback)
@@ -330,7 +329,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the members with the runtime."""
         member_names = {m.name for m in self._members if isinstance(m, Agent)}
@@ -348,7 +347,7 @@ class HandoffOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     internal_topic_type,
                     handoff_connections,
                     result_callback=result_callback,
-                    observer=self._observer,
+                    agent_response_callback=self._agent_response_callback,
                 ),
             )
 

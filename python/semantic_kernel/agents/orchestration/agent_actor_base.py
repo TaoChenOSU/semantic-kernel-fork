@@ -9,7 +9,7 @@ from typing import Any
 from autogen_core import MessageContext, RoutedAgent
 
 from semantic_kernel.agents.agent import Agent, AgentThread
-from semantic_kernel.agents.orchestration.orchestration_base import DefaultExternalTypeAlias
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias
 from semantic_kernel.contents.chat_history import ChatHistory
 
 if sys.version_info >= (3, 12):
@@ -40,18 +40,19 @@ class AgentActorBase(ActorBase):
         self,
         agent: Agent,
         internal_topic_type: str,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the agent container.
 
         Args:
             agent (Agent): An agent to be run in the container.
             internal_topic_type (str): The topic type of the internal topic.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
         """
         self._agent = agent
         self._internal_topic_type = internal_topic_type
-        self._observer = observer
+        self._agent_response_callback = agent_response_callback
 
         self._agent_thread: AgentThread | None = None
         # Chat history to temporarily store messages before the agent thread is created
@@ -59,17 +60,14 @@ class AgentActorBase(ActorBase):
 
         ActorBase.__init__(self, description=agent.description or "Semantic Kernel Agent")
 
-    async def _notify_observer(
-        self,
-        message: str | DefaultExternalTypeAlias,
-    ) -> None:
-        """Call the observer function if it is set.
+    async def _call_agent_response_callback(self, message: DefaultTypeAlias) -> None:
+        """Call the agent_response_callback function if it is set.
 
         Args:
-            message (str | DefaultExternalTypeAlias): The message to be sent to the observer.
+            message (DefaultTypeAlias): The message to be sent to the agent_response_callback.
         """
-        if self._observer:
-            if inspect.iscoroutinefunction(self._observer):
-                await self._observer(message)
+        if self._agent_response_callback:
+            if inspect.iscoroutinefunction(self._agent_response_callback):
+                await self._agent_response_callback(message)
             else:
-                self._observer(message)
+                self._agent_response_callback(message)

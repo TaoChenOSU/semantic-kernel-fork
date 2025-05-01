@@ -8,12 +8,7 @@ from autogen_core import AgentRuntime, CancellationToken, MessageContext, Routed
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
-from semantic_kernel.agents.orchestration.orchestration_base import (
-    DefaultExternalTypeAlias,
-    OrchestrationBase,
-    TExternalIn,
-    TExternalOut,
-)
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
@@ -29,7 +24,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class SequentialRequestMessage(KernelBaseModel):
     """A request message type for concurrent agents."""
 
-    body: DefaultExternalTypeAlias
+    body: DefaultTypeAlias
 
 
 class SequentialResultMessage(KernelBaseModel):
@@ -46,11 +41,15 @@ class SequentialAgentActor(AgentActorBase):
         agent: Agent,
         internal_topic_type: str,
         next_agent_type: str,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the agent actor."""
         self._next_agent_type = next_agent_type
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
+        super().__init__(
+            agent=agent,
+            internal_topic_type=internal_topic_type,
+            agent_response_callback=agent_response_callback,
+        )
 
     @message_handler
     async def _handle_message(self, message: SequentialRequestMessage, ctx: MessageContext) -> None:
@@ -61,7 +60,7 @@ class SequentialAgentActor(AgentActorBase):
 
         logger.debug(f"Sequential actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 
-        await self._notify_observer(response)
+        await self._call_agent_response_callback(response)
 
         target_actor_id = await self.runtime.get(self._next_agent_type)
         await self.send_message(
@@ -77,7 +76,7 @@ class CollectionActor(RoutedAgent):
     def __init__(
         self,
         description: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the collection actor."""
         self._result_callback = result_callback
@@ -91,13 +90,13 @@ class CollectionActor(RoutedAgent):
             await self._result_callback(message.body)
 
 
-class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
     """A sequential multi-agent pattern orchestration."""
 
     @override
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -115,7 +114,7 @@ class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], None] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
@@ -148,7 +147,7 @@ class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     agent,
                     internal_topic_type,
                     next_agent_type=next_actor_type,
-                    observer=self._observer,
+                    agent_response_callback=self._agent_response_callback,
                 ),
             )
             logger.debug(f"Registered agent actor of type {self._get_agent_actor_type(agent, internal_topic_type)}")
@@ -158,7 +157,7 @@ class SequentialOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the collection actor."""
         await CollectionActor.register(

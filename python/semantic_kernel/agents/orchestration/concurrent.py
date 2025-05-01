@@ -19,10 +19,10 @@ from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import (
     ChatMessageContent,
-    DefaultExternalTypeAlias,
+    DefaultTypeAlias,
     OrchestrationBase,
-    TExternalIn,
-    TExternalOut,
+    TIn,
+    TOut,
 )
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
@@ -38,7 +38,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class ConcurrentRequestMessage(KernelBaseModel):
     """A request message type for concurrent agents."""
 
-    body: DefaultExternalTypeAlias
+    body: DefaultTypeAlias
 
 
 class ConcurrentResponseMessage(KernelBaseModel):
@@ -55,11 +55,15 @@ class ConcurrentAgentActor(AgentActorBase):
         agent: Agent,
         internal_topic_type: str,
         collection_agent_type: str,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the agent actor."""
         self._collection_agent_type = collection_agent_type
-        super().__init__(agent=agent, internal_topic_type=internal_topic_type, observer=observer)
+        super().__init__(
+            agent=agent,
+            internal_topic_type=internal_topic_type,
+            agent_response_callback=agent_response_callback,
+        )
 
     @message_handler
     async def _handle_message(self, message: ConcurrentRequestMessage, ctx: MessageContext) -> None:
@@ -70,7 +74,7 @@ class ConcurrentAgentActor(AgentActorBase):
 
         logger.debug(f"Concurrent actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 
-        await self._notify_observer(response.message)
+        await self._call_agent_response_callback(response.message)
 
         target_actor_id = await self.runtime.get(self._collection_agent_type)
         await self.send_message(
@@ -87,7 +91,7 @@ class CollectionActor(RoutedAgent):
         self,
         description: str,
         expected_answer_count: int,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the collection agent container."""
         self._expected_answer_count = expected_answer_count
@@ -108,13 +112,13 @@ class CollectionActor(RoutedAgent):
                 await self._result_callback(self._results)
 
 
-class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+class ConcurrentOrchestration(OrchestrationBase[TIn, TOut]):
     """A concurrent multi-agent pattern orchestration."""
 
     @override
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -131,7 +135,7 @@ class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await asyncio.gather(*[
@@ -165,7 +169,7 @@ class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
                     agent,
                     internal_topic_type,
                     collection_agent_type=self._get_collection_actor_type(internal_topic_type),
-                    observer=self._observer,
+                    agent_response_callback=self._agent_response_callback,
                 ),
             )
 
@@ -175,7 +179,7 @@ class ConcurrentOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         await CollectionActor.register(
             runtime,

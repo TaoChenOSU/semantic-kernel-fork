@@ -28,30 +28,30 @@ else:
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-DefaultExternalTypeAlias = Union[ChatMessageContent, list[ChatMessageContent]]
+DefaultTypeAlias = Union[ChatMessageContent, list[ChatMessageContent]]
 
-TExternalIn = TypeVar("TExternalIn", default=DefaultExternalTypeAlias)
-TExternalOut = TypeVar("TExternalOut", default=DefaultExternalTypeAlias)
+TIn = TypeVar("TIn", default=DefaultTypeAlias)
+TOut = TypeVar("TOut", default=DefaultTypeAlias)
 
 
-class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
+class OrchestrationResult(KernelBaseModel, Generic[TOut]):
     """The result of the orchestration.
 
     This class is used to store the result of the orchestration and the context of the message.
     """
 
-    value: TExternalOut | None = None
+    value: TOut | None = None
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
     cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
-    async def get(self, timeout: float | None = None) -> TExternalOut:
+    async def get(self, timeout: float | None = None) -> TOut:
         """Get the result of the orchestration.
 
         Args:
             timeout (int | None): The timeout (seconds) for the orchestration. If None, wait indefinitely.
 
         Returns:
-            TExternalOut: The result of the orchestration.
+            TOut: The result of the orchestration.
         """
         # TODO(@taochen): Cancel the task is an exception is raised inside the orchestration.
         try:
@@ -84,21 +84,20 @@ class OrchestrationResult(KernelBaseModel, Generic[TExternalOut]):
         self.event.set()
 
 
-class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
+class OrchestrationBase(ABC, Generic[TIn, TOut]):
     """Base class for multi-agent orchestration."""
 
-    t_external_in: type[TExternalIn] = None
-    t_external_out: type[TExternalOut] = None
+    t_in: type[TIn] = None
+    t_out: type[TOut] = None
 
     def __init__(
         self,
         members: list[Agent],
         name: str | None = None,
         description: str | None = None,
-        input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
-        | None = None,
-        output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
+        output_transform: Callable[[DefaultTypeAlias], Awaitable[TOut] | TOut] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the orchestration base.
 
@@ -108,7 +107,8 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
         """
         if not members:
             raise ValueError("The members list cannot be empty.")
@@ -120,7 +120,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         self._input_transform = input_transform or self._default_input_transform
         self._output_transform = output_transform or self._default_output_transform
 
-        self._observer = observer
+        self._agent_response_callback = agent_response_callback
 
     def _set_types(self) -> None:
         """Set the external input and output types from the class arguments.
@@ -131,7 +131,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         This method will first try to get the type parameters from the class itself. The `__orig_class__`
         attribute will contain the external input and output types if they are explicitly given, for example:
         ```
-        class MyOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+        class MyOrchestration(OrchestrationBase[TIn, TOut]):
             pass
 
 
@@ -139,11 +139,11 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         ```
         If the type parameters are not explicitly given, for example when the TypeVars has defaults, for example:
         ```
-        TExternalIn = TypeVar("TExternalIn", default=str)
-        TExternalOut = TypeVar("TExternalOut", default=str)
+        TIn = TypeVar("TIn", default=str)
+        TOut = TypeVar("TOut", default=str)
 
 
-        class MyOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+        class MyOrchestration(OrchestrationBase[TIn, TOut]):
             pass
 
 
@@ -151,45 +151,45 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         ```
         The type parameters can be inferred from the `__orig_bases__` attribute.
         """
-        if all([self.t_external_in is not None, self.t_external_out is not None]):
+        if all([self.t_in is not None, self.t_out is not None]):
             return
 
         try:
             args = self.__orig_class__.__args__
             if len(args) != 2:
                 raise TypeError("Orchestration must have external input and output types.")
-            self.t_external_in = args[0]
-            self.t_external_out = args[1]
+            self.t_in = args[0]
+            self.t_out = args[1]
         except AttributeError:
             args = get_args(self.__orig_bases__[0])
 
             if len(args) != 2:
                 raise TypeError("Orchestration must be subclassed with four type parameters.")
-            self.t_external_in = args[0] if isinstance(args[0], type) else getattr(args[0], "__default__", None)
-            self.t_external_out = args[1] if isinstance(args[1], type) else getattr(args[1], "__default__", None)
+            self.t_in = args[0] if isinstance(args[0], type) else getattr(args[0], "__default__", None)
+            self.t_out = args[1] if isinstance(args[1], type) else getattr(args[1], "__default__", None)
 
-        if any([self.t_external_in is None, self.t_external_out is None]):
+        if any([self.t_in is None, self.t_out is None]):
             raise TypeError("Orchestration must have concrete types for all type parameters.")
 
     async def invoke(
         self,
-        task: str | DefaultExternalTypeAlias | TExternalIn,
+        task: str | DefaultTypeAlias | TIn,
         runtime: AgentRuntime,
-    ) -> OrchestrationResult[TExternalOut]:
+    ) -> OrchestrationResult[TOut]:
         """Invoke the multi-agent orchestration and return the result.
 
         This method is a blocking call that waits for the orchestration to finish
         and returns the result.
 
         Args:
-            task (str, DefaultExternalTypeAlias, TExternalIn): The task to be executed by the agents.
+            task (str, DefaultTypeAlias, TIn): The task to be executed by the agents.
             runtime (AgentRuntime): The runtime environment for the agents.
         """
         self._set_types()
 
-        orchestration_result = OrchestrationResult[self.t_external_out]()
+        orchestration_result = OrchestrationResult[self.t_out]()
 
-        async def result_callback(result: DefaultExternalTypeAlias) -> None:
+        async def result_callback(result: DefaultTypeAlias) -> None:
             nonlocal orchestration_result
             if inspect.iscoroutinefunction(self._output_transform):
                 transformed_result = await self._output_transform(result)
@@ -212,9 +212,9 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             prepared_task = ChatMessageContent(role=AuthorRole.USER, content=task)
         else:
             if inspect.iscoroutinefunction(self._input_transform):
-                prepared_task: DefaultExternalTypeAlias = await self._input_transform(task)
+                prepared_task: DefaultTypeAlias = await self._input_transform(task)
             else:
-                prepared_task: DefaultExternalTypeAlias = self._input_transform(task)
+                prepared_task: DefaultTypeAlias = self._input_transform(task)
 
         asyncio.create_task(  # noqa: RUF006
             self._start(
@@ -229,7 +229,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
     @abstractmethod
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -249,7 +249,7 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions.
 
@@ -258,22 +258,22 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
             external_topic_type (str | None): The external topic type for the orchestration.
             direct_actor_type (str | None): The direct actor type for which this actor will relay the output message to.
-            result_callback (Callable[[DefaultExternalTypeAlias], None] | None):
+            result_callback (Callable[[DefaultTypeAlias], None] | None):
                 A function that is called when the result is available.
         """
         pass
 
-    def _default_input_transform(self, input_message: TExternalIn) -> DefaultExternalTypeAlias:
+    def _default_input_transform(self, input_message: TIn) -> DefaultTypeAlias:
         """Default input transform function.
 
         This function transforms the external input message to chat message content(s).
         If the input message is already in the correct format, it is returned as is.
 
         Args:
-            input_message (TExternalIn): The input message to be transformed.
+            input_message (TIn): The input message to be transformed.
 
         Returns:
-            DefaultExternalTypeAlias: The transformed input message.
+            DefaultTypeAlias: The transformed input message.
         """
         if isinstance(input_message, ChatMessageContent):
             return input_message
@@ -281,35 +281,35 @@ class OrchestrationBase(ABC, Generic[TExternalIn, TExternalOut]):
         if isinstance(input_message, list) and all(isinstance(item, ChatMessageContent) for item in input_message):
             return input_message
 
-        if isinstance(input_message, self.t_external_in):
+        if isinstance(input_message, self.t_in):
             return ChatMessageContent(
                 role=AuthorRole.USER,
                 content=json.dumps(input_message),
             )
 
-        raise TypeError(f"Invalid input message type: {type(input_message)}. Expected {self.t_external_in}.")
+        raise TypeError(f"Invalid input message type: {type(input_message)}. Expected {self.t_in}.")
 
-    def _default_output_transform(self, output_message: DefaultExternalTypeAlias) -> TExternalOut:
+    def _default_output_transform(self, output_message: DefaultTypeAlias) -> TOut:
         """Default output transform function.
 
         This function transforms the internal output message to the external output message.
         If the output message is already in the correct format, it is returned as is.
 
         Args:
-            output_message (DefaultExternalTypeAlias): The output message to be transformed.
+            output_message (DefaultTypeAlias): The output message to be transformed.
 
         Returns:
-            TExternalOut: The transformed output message.
+            TOut: The transformed output message.
         """
-        if self.t_external_out == DefaultExternalTypeAlias or self.t_external_out in get_args(DefaultExternalTypeAlias):
+        if self.t_out == DefaultTypeAlias or self.t_out in get_args(DefaultTypeAlias):
             if isinstance(output_message, ChatMessageContent) or (
                 isinstance(output_message, list)
                 and all(isinstance(item, ChatMessageContent) for item in output_message)
             ):
                 return output_message
-            raise TypeError(f"Invalid output message type: {type(output_message)}. Expected {self.t_external_out}.")
+            raise TypeError(f"Invalid output message type: {type(output_message)}. Expected {self.t_out}.")
 
         if isinstance(output_message, ChatMessageContent):
-            return json.loads(output_message.content, object_hook=lambda content: self.t_external_out(content))
+            return json.loads(output_message.content, object_hook=lambda content: self.t_out(content))
 
-        raise TypeError(f"Unable to transform output message of type {type(output_message)} to {self.t_external_out}.")
+        raise TypeError(f"Unable to transform output message of type {type(output_message)} to {self.t_out}.")

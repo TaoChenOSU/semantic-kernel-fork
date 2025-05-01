@@ -9,12 +9,7 @@ from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicI
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
-from semantic_kernel.agents.orchestration.orchestration_base import (
-    DefaultExternalTypeAlias,
-    OrchestrationBase,
-    TExternalIn,
-    TExternalOut,
-)
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
 from semantic_kernel.agents.orchestration.prompts._magentic_one_prompts import (
     ORCHESTRATOR_FINAL_ANSWER_PROMPT,
     ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
@@ -49,7 +44,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class MagenticOneStartMessage(KernelBaseModel):
     """A message to start a magentic one group chat."""
 
-    body: DefaultExternalTypeAlias
+    body: DefaultTypeAlias
 
 
 class MagenticOneRequestMessage(KernelBaseModel):
@@ -287,7 +282,7 @@ class MagenticOneManagerActor(ActorBase):
         manager: MagenticOneManager,
         internal_topic_type: str,
         participant_descriptions: dict[str, str],
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the Magentic One manager actor.
 
@@ -511,7 +506,7 @@ class MagenticOneAgentActor(AgentActorBase):
             response_item = await self._agent.get_response(messages=new_message, thread=self._agent_thread)
 
         logger.debug(f"{self.id} responded with {response_item.message.content}.")
-        await self._notify_observer(response_item.message)
+        await self._call_agent_response_callback(response_item.message)
 
         await self.publish_message(
             MagenticOneResponseMessage(body=response_item.message),
@@ -534,7 +529,7 @@ class MagenticOneAgentActor(AgentActorBase):
 # region MagenticOneOrchestration
 
 
-class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
+class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
     """The Magentic One pattern orchestration."""
 
     def __init__(
@@ -543,10 +538,9 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         manager: MagenticOneManager,
         name: str | None = None,
         description: str | None = None,
-        input_transform: Callable[[TExternalIn], Awaitable[DefaultExternalTypeAlias] | DefaultExternalTypeAlias]
-        | None = None,
-        output_transform: Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut] | TExternalOut] | None = None,
-        observer: Callable[[str | DefaultExternalTypeAlias], Awaitable[None] | None] | None = None,
+        input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
+        output_transform: Callable[[DefaultTypeAlias], Awaitable[TOut] | TOut] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the Magentic One orchestration.
 
@@ -557,7 +551,8 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
             output_transform (Callable | None): A function that transforms the internal output message.
-            observer (Callable | None): A function that is called when a response is produced by the agents.
+            agent_response_callback (Callable | None): A function that is called when a response is produced
+                by the agents.
         """
         self._manager = manager
 
@@ -567,13 +562,13 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             description=description,
             input_transform=input_transform,
             output_transform=output_transform,
-            observer=observer,
+            agent_response_callback=agent_response_callback,
         )
 
     @override
     async def _start(
         self,
-        task: DefaultExternalTypeAlias,
+        task: DefaultTypeAlias,
         runtime: AgentRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
@@ -609,7 +604,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TExternalOut], None] | None = None,
+        result_callback: Callable[[TOut], None] | None = None,
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
@@ -623,7 +618,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
             MagenticOneAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: MagenticOneAgentActor(agent, internal_topic_type, self._observer),
+                lambda agent=agent: MagenticOneAgentActor(agent, internal_topic_type, self._agent_response_callback),
             )
             for agent in self._members
         ])
@@ -632,7 +627,7 @@ class MagenticOneOrchestration(OrchestrationBase[TExternalIn, TExternalOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultExternalTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the group chat manager."""
         await MagenticOneManagerActor.register(

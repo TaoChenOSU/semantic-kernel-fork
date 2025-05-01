@@ -14,7 +14,7 @@ from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion impo
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
 
-def observer_function(message: ChatMessageContent) -> None:
+def agent_response_callback(message: ChatMessageContent) -> None:
     """Observer function to print the messages from the agents."""
     print(f"**{message.name}**\n{message.content}")
 
@@ -50,7 +50,7 @@ async def main():
             chat_completion_service=OpenAIChatCompletion(),
             prompt_execution_settings=OpenAIPromptExecutionSettings(),
         ),
-        observer=observer_function,
+        agent_response_callback=agent_response_callback,
     )
 
     runtime = SingleThreadedAgentRuntime()

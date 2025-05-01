@@ -284,7 +284,7 @@ class ChatCompletionGroupChatManager(GroupChatManager):
         )
 
 
-def observer_function(message: ChatMessageContent) -> None:
+def agent_response_callback(message: ChatMessageContent) -> None:
     """Observer function to print the messages from the agents."""
     print(f"**{message.name}**\n{message.content}")
 
@@ -300,7 +300,7 @@ async def main():
             service=OpenAIChatCompletion(),
             max_rounds=10,
         ),
-        observer=observer_function,
+        agent_response_callback=agent_response_callback,
     )
 
     runtime = SingleThreadedAgentRuntime()

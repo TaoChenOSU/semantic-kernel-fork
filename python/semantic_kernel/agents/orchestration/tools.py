@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel
 
-from semantic_kernel.agents.orchestration.orchestration_base import DefaultExternalTypeAlias, TExternalOut
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, TOut
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
 from semantic_kernel.contents.chat_history import ChatHistory
@@ -17,7 +17,7 @@ def structure_output_transform(
     target_structure: type[BaseModel],
     service: ChatCompletionClientBase,
     prompt_execution_settings: PromptExecutionSettings | None = None,
-) -> Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut]]:
+) -> Callable[[DefaultTypeAlias], Awaitable[TOut]]:
     """Return a function that transforms the output of a chat completion service into a target structure.
 
     Args:
@@ -27,7 +27,7 @@ def structure_output_transform(
         prompt_execution_settings (PromptExecutionSettings, optional): The settings to use for the prompt execution.
 
     Returns:
-        Callable[[DefaultExternalTypeAlias], Awaitable[TExternalOut]]: A function that takes the output of
+        Callable[[DefaultTypeAlias], Awaitable[TOut]]: A function that takes the output of
             the chat completion service and transforms it into the target structure.
     """
     kernel = Kernel()
@@ -45,14 +45,14 @@ def structure_output_transform(
         ),
     )
 
-    async def output_transform(output: DefaultExternalTypeAlias) -> TExternalOut:
+    async def output_transform(output: DefaultTypeAlias) -> TOut:
         """Transform the output of the chat completion service into the target structure."""
         if isinstance(output, ChatMessageContent):
             chat_history.add_message(output)
         elif isinstance(output, list) and all(isinstance(item, ChatMessageContent) for item in output):
             [chat_history.add_message(item) for item in output]
         else:
-            raise ValueError(f"Output must be {DefaultExternalTypeAlias}.")
+            raise ValueError(f"Output must be {DefaultTypeAlias}.")
 
         response = await service.get_chat_message_content(chat_history, settings)
 
