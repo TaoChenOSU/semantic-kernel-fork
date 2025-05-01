@@ -35,50 +35,46 @@ TOut = TypeVar("TOut", default=DefaultTypeAlias)
 
 
 class OrchestrationResult(KernelBaseModel, Generic[TOut]):
-    """The result of the orchestration.
-
-    This class is used to store the result of the orchestration and the context of the message.
-    """
+    """The result of an invocation of an orchestration."""
 
     value: TOut | None = None
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
     cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
     async def get(self, timeout: float | None = None) -> TOut:
-        """Get the result of the orchestration.
+        """Get the result of the invocation.
+
+        If a timeout is specified, the method will wait for the result for the specified time.
+        If the result is not available within the timeout, a TimeoutError will be raised but the
+        invocation will not be aborted.
 
         Args:
-            timeout (int | None): The timeout (seconds) for the orchestration. If None, wait indefinitely.
+            timeout (int | None): The timeout (seconds) for getting the result. If None, wait indefinitely.
 
         Returns:
-            TOut: The result of the orchestration.
+            TOut: The result of the invocation.
         """
-        # TODO(@taochen): Cancel the task is an exception is raised inside the orchestration.
-        try:
-            if timeout is not None:
-                await asyncio.wait_for(self.event.wait(), timeout=timeout)
-            else:
-                await self.event.wait()
-        except asyncio.TimeoutError:
-            self.cancellation_token.cancel()
-            raise RuntimeError(f"The orchestration timed out after {timeout} seconds.")
+        if timeout is not None:
+            await asyncio.wait_for(self.event.wait(), timeout=timeout)
+        else:
+            await self.event.wait()
 
         if self.value is None:
             if self.cancellation_token.is_cancelled():
-                raise RuntimeError("The orchestration was canceled before it could complete.")
-            raise RuntimeError("Result is None. An error may have occurred during the invocation.")
+                raise RuntimeError("The invocation was canceled before it could complete.")
+            raise RuntimeError("The invocation did not produce a result.")
         return self.value
 
     def cancel(self) -> None:
-        """Cancel the orchestration.
+        """Cancel the invocation.
 
-        This method will cancel the orchestration and set the cancellation token.
+        This method will cancel the invocation.
         Actors that have received messages will continue to process them, but no new messages will be processed.
         """
         if self.cancellation_token.is_cancelled():
-            raise RuntimeError("The orchestration has already been canceled.")
+            raise RuntimeError("The invocation has already been canceled.")
         if self.event.is_set():
-            raise RuntimeError("The orchestration has already been completed.")
+            raise RuntimeError("The invocation has already been completed.")
 
         self.cancellation_token.cancel()
         self.event.set()
@@ -102,7 +98,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         """Initialize the orchestration base.
 
         Args:
-            members (list[Agent]): The list of agents or orchestrations to be used.
+            members (list[Agent]): The list of agents to be used.
             name (str | None): A unique name of the orchestration. If None, a unique name will be generated.
             description (str | None): The description of the orchestration. If None, use a default description.
             input_transform (Callable | None): A function that transforms the external input message.
@@ -112,6 +108,8 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         """
         if not members:
             raise ValueError("The members list cannot be empty.")
+        if len(members) < 2:
+            raise ValueError("The members list must contain at least two agents.")
         self._members = members
 
         self.name = name or f"{self.__class__.__name__}_{uuid.uuid4().hex}"
@@ -157,14 +155,14 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         try:
             args = self.__orig_class__.__args__  # type: ignore[attr-defined]
             if len(args) != 2:
-                raise TypeError("Orchestration must have external input and output types.")
+                raise TypeError("Orchestration must have input and output types.")
             self.t_in = args[0]
             self.t_out = args[1]
         except AttributeError:
             args = get_args(self.__orig_bases__[0])  # type: ignore[attr-defined]
 
             if len(args) != 2:
-                raise TypeError("Orchestration must be subclassed with four type parameters.")
+                raise TypeError("Orchestration must be subclassed with two type parameters.")
             self.t_in = args[0] if isinstance(args[0], type) else getattr(args[0], "__default__", None)  # type: ignore[assignment]
             self.t_out = args[1] if isinstance(args[1], type) else getattr(args[1], "__default__", None)  # type: ignore[assignment]
 
@@ -287,7 +285,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         if isinstance(input_message, self.t_in):
             return ChatMessageContent(
                 role=AuthorRole.USER,
-                content=json.dumps(input_message),
+                content=json.dumps(input_message.__dict__),
             )
 
         raise TypeError(f"Invalid input message type: {type(input_message)}. Expected {self.t_in}.")
@@ -313,6 +311,6 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             raise TypeError(f"Invalid output message type: {type(output_message)}. Expected {self.t_out}.")
 
         if isinstance(output_message, ChatMessageContent):
-            return json.loads(output_message.content, object_hook=lambda content: self.t_out(content))
+            return self.t_out(**json.loads(output_message.content))
 
         raise TypeError(f"Unable to transform output message of type {type(output_message)} to {self.t_out}.")

@@ -9,8 +9,8 @@ import pytest
 from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.agent import Agent, AgentResponseItem, AgentThread
-from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationResult
+from semantic_kernel.agents.orchestration.sequential import SequentialOrchestration
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.streaming_chat_message_content import StreamingChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
@@ -67,29 +67,29 @@ class MockAgent(Agent):
 
 
 async def test_prepare():
-    """Test the prepare method of the ConcurrentOrchestration."""
+    """Test the prepare method of the SequentialOrchestration."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
     runtime = SingleThreadedAgentRuntime()
 
-    package_path = "semantic_kernel.agents.orchestration.concurrent"
+    package_path = "semantic_kernel.agents.orchestration.sequential"
     with (
-        patch(f"{package_path}.ConcurrentOrchestration._start"),
-        patch(f"{package_path}.ConcurrentAgentActor.register") as mock_agent_actor_register,
+        patch(f"{package_path}.SequentialOrchestration._start"),
+        patch(f"{package_path}.SequentialAgentActor.register") as mock_agent_actor_register,
         patch(f"{package_path}.CollectionActor.register") as mock_collection_actor_register,
         patch.object(runtime, "add_subscription") as mock_add_subscription,
     ):
-        orchestration = ConcurrentOrchestration(members=[agent_a, agent_b])
+        orchestration = SequentialOrchestration(members=[agent_a, agent_b])
         await orchestration.invoke(task="test_message", runtime=runtime)
 
         assert mock_agent_actor_register.call_count == 2
         assert mock_collection_actor_register.call_count == 1
-        assert mock_add_subscription.call_count == 2
+        assert mock_add_subscription.call_count == 0
 
 
 async def test_invoke():
-    """Test the invoke method of the ConcurrentOrchestration."""
+    """Test the invoke method of the SequentialOrchestration."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
@@ -97,20 +97,18 @@ async def test_invoke():
     runtime.start()
 
     try:
-        orchestration = ConcurrentOrchestration(members=[agent_a, agent_b])
+        orchestration = SequentialOrchestration(members=[agent_a, agent_b])
         orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
         result = await orchestration_result.get(1.0)
 
         assert isinstance(orchestration_result, OrchestrationResult)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert all(isinstance(item, ChatMessageContent) for item in result)
+        assert isinstance(result, ChatMessageContent)
     finally:
         await runtime.stop_when_idle()
 
 
 async def test_invoke_with_response_callback():
-    """Test the invoke method of the ConcurrentOrchestration with a response callback."""
+    """Test the invoke method of the SequentialOrchestration with a response callback."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
@@ -119,7 +117,7 @@ async def test_invoke_with_response_callback():
 
     responses: list[DefaultTypeAlias] = []
     try:
-        orchestration = ConcurrentOrchestration(
+        orchestration = SequentialOrchestration(
             members=[agent_a, agent_b],
             agent_response_callback=lambda x: responses.append(x),
         )
@@ -134,7 +132,7 @@ async def test_invoke_with_response_callback():
 
 
 async def test_invoke_cancel_after_completion():
-    """Test the invoke method of the ConcurrentOrchestration with cancellation after completion."""
+    """Test the invoke method of the SequentialOrchestration with cancellation after completion."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
@@ -142,7 +140,7 @@ async def test_invoke_cancel_after_completion():
     runtime.start()
 
     try:
-        orchestration = ConcurrentOrchestration(members=[agent_a, agent_b])
+        orchestration = SequentialOrchestration(members=[agent_a, agent_b])
         orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
 
         # Wait for the orchestration to complete
@@ -155,7 +153,7 @@ async def test_invoke_cancel_after_completion():
 
 
 async def test_invoke_with_double_get_result():
-    """Test the invoke method of the ConcurrentOrchestration with double get result."""
+    """Test the invoke method of the SequentialOrchestration with double get result."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
@@ -163,7 +161,7 @@ async def test_invoke_with_double_get_result():
     runtime.start()
 
     try:
-        orchestration = ConcurrentOrchestration(members=[agent_a, agent_b])
+        orchestration = SequentialOrchestration(members=[agent_a, agent_b])
         orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
 
         # Get result before completion
@@ -172,7 +170,7 @@ async def test_invoke_with_double_get_result():
         # The invocation should still be in progress and getting the result again should not raise an error
         result = await orchestration_result.get()
 
-        assert isinstance(result, list)
-        assert len(result) == 2
+        assert isinstance(result, ChatMessageContent)
+        assert result.content == "mock_response"
     finally:
         await runtime.stop_when_idle()
