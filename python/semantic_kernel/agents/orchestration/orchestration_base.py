@@ -87,8 +87,8 @@ class OrchestrationResult(KernelBaseModel, Generic[TOut]):
 class OrchestrationBase(ABC, Generic[TIn, TOut]):
     """Base class for multi-agent orchestration."""
 
-    t_in: type[TIn] = None
-    t_out: type[TOut] = None
+    t_in: type[TIn] | None = None
+    t_out: type[TOut] | None = None
 
     def __init__(
         self,
@@ -155,18 +155,18 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             return
 
         try:
-            args = self.__orig_class__.__args__
+            args = self.__orig_class__.__args__  # type: ignore[attr-defined]
             if len(args) != 2:
                 raise TypeError("Orchestration must have external input and output types.")
             self.t_in = args[0]
             self.t_out = args[1]
         except AttributeError:
-            args = get_args(self.__orig_bases__[0])
+            args = get_args(self.__orig_bases__[0])  # type: ignore[attr-defined]
 
             if len(args) != 2:
                 raise TypeError("Orchestration must be subclassed with four type parameters.")
-            self.t_in = args[0] if isinstance(args[0], type) else getattr(args[0], "__default__", None)
-            self.t_out = args[1] if isinstance(args[1], type) else getattr(args[1], "__default__", None)
+            self.t_in = args[0] if isinstance(args[0], type) else getattr(args[0], "__default__", None)  # type: ignore[assignment]
+            self.t_out = args[1] if isinstance(args[1], type) else getattr(args[1], "__default__", None)  # type: ignore[assignment]
 
         if any([self.t_in is None, self.t_out is None]):
             raise TypeError("Orchestration must have concrete types for all type parameters.")
@@ -210,6 +210,10 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
 
         if isinstance(task, str):
             prepared_task = ChatMessageContent(role=AuthorRole.USER, content=task)
+        elif isinstance(task, ChatMessageContent) or (
+            isinstance(task, list) and all(isinstance(item, ChatMessageContent) for item in task)
+        ):
+            prepared_task = task
         else:
             if inspect.iscoroutinefunction(self._input_transform):
                 prepared_task: DefaultTypeAlias = await self._input_transform(task)
@@ -249,7 +253,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions.
 
@@ -258,8 +262,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
             external_topic_type (str | None): The external topic type for the orchestration.
             direct_actor_type (str | None): The direct actor type for which this actor will relay the output message to.
-            result_callback (Callable[[DefaultTypeAlias], None] | None):
-                A function that is called when the result is available.
+            result_callback (Callable): A function that is called when the result is available.
         """
         pass
 

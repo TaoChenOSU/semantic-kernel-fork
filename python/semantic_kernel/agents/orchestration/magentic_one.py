@@ -143,6 +143,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             self.prompt_execution_settings,
         )
+        assert facts is not None
         chat_history.add_message(facts)
 
         # 2. Update the plan
@@ -164,6 +165,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             self.prompt_execution_settings,
         )
+        assert plan is not None
 
         return facts, plan
 
@@ -240,6 +242,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             prompt_execution_settings_clone,
         )
+        assert response is not None
 
         return ProgressLedger.model_validate_json(response.content)
 
@@ -263,10 +266,13 @@ class MagenticOneManager(KernelBaseModel):
             )
         )
 
-        return await self.chat_completion_service.get_chat_message_content(
+        response = await self.chat_completion_service.get_chat_message_content(
             chat_history,
             self.prompt_execution_settings,
         )
+        assert response is not None
+
+        return response
 
 
 # endregion MagenticOneManager
@@ -407,7 +413,7 @@ class MagenticOneManagerActor(ActorBase):
         self._chat_history.add_message(
             ChatMessageContent(
                 role=AuthorRole.ASSISTANT,
-                content=next_step,
+                content=next_step if isinstance(next_step, str) else str(next_step),
                 name=self.__class__.__name__,
             )
         )
@@ -495,7 +501,7 @@ class MagenticOneAgentActor(AgentActorBase):
                     content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
                 )
             )
-            response_item = await self._agent.get_response(messages=self._chat_history.messages)
+            response_item = await self._agent.get_response(messages=self._chat_history.messages)  # type: ignore[arg-type]
             self._agent_thread = response_item.thread
         else:
             # Add a user message to steer the agent to respond more closely to the instructions.
@@ -534,7 +540,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
 
     def __init__(
         self,
-        members: list[Agent | OrchestrationBase],
+        members: list[Agent],
         manager: MagenticOneManager,
         name: str | None = None,
         description: str | None = None,

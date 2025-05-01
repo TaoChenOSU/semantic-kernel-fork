@@ -56,11 +56,11 @@ class SequentialAgentActor(AgentActorBase):
         """Handle a message."""
         logger.debug(f"Sequential actor (Actor ID: {self.id}; Agent name: {self._agent.name}) started processing...")
 
-        response = await self._agent.get_response(messages=message.body)
+        response = await self._agent.get_response(messages=message.body)  # type: ignore[arg-type]
 
         logger.debug(f"Sequential actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 
-        await self._call_agent_response_callback(response)
+        await self._call_agent_response_callback(response.message)
 
         target_actor_id = await self.runtime.get(self._next_agent_type)
         await self.send_message(
@@ -76,7 +76,7 @@ class CollectionActor(RoutedAgent):
     def __init__(
         self,
         description: str,
-        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Initialize the collection actor."""
         self._result_callback = result_callback
@@ -86,8 +86,7 @@ class CollectionActor(RoutedAgent):
     @message_handler
     async def _handle_message(self, message: SequentialRequestMessage, ctx: MessageContext) -> None:
         """Handle the last message."""
-        if self._result_callback:
-            await self._result_callback(message.body)
+        await self._result_callback(message.body)
 
 
 class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
@@ -114,7 +113,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultTypeAlias], None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
@@ -157,7 +156,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
         self,
         runtime: AgentRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the collection actor."""
         await CollectionActor.register(
