@@ -185,7 +185,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         """
         self._set_types()
 
-        orchestration_result = OrchestrationResult[self.t_out]()
+        orchestration_result = OrchestrationResult[self.t_out]()  # type: ignore[name-defined]
 
         async def result_callback(result: DefaultTypeAlias) -> None:
             nonlocal orchestration_result
@@ -214,9 +214,9 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             prepared_task = task
         else:
             if inspect.iscoroutinefunction(self._input_transform):
-                prepared_task: DefaultTypeAlias = await self._input_transform(task)
+                prepared_task = await self._input_transform(task)  # type: ignore[arg-type]
             else:
-                prepared_task: DefaultTypeAlias = self._input_transform(task)
+                prepared_task = self._input_transform(task)  # type: ignore[arg-type]
 
         asyncio.create_task(  # noqa: RUF006
             self._start(
@@ -282,7 +282,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         if isinstance(input_message, list) and all(isinstance(item, ChatMessageContent) for item in input_message):
             return input_message
 
-        if isinstance(input_message, self.t_in):
+        if isinstance(input_message, self.t_in):  # type: ignore[arg-type]
             return ChatMessageContent(
                 role=AuthorRole.USER,
                 content=json.dumps(input_message.__dict__),
@@ -307,10 +307,10 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
                 isinstance(output_message, list)
                 and all(isinstance(item, ChatMessageContent) for item in output_message)
             ):
-                return output_message
+                return output_message  # type: ignore[return-value]
             raise TypeError(f"Invalid output message type: {type(output_message)}. Expected {self.t_out}.")
 
         if isinstance(output_message, ChatMessageContent):
-            return self.t_out(**json.loads(output_message.content))
+            return self.t_out(**json.loads(output_message.content))  # type: ignore[misc]
 
         raise TypeError(f"Unable to transform output message of type {type(output_message)} to {self.t_out}.")
