@@ -14,7 +14,7 @@ from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeA
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.streaming_chat_message_content import StreamingChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
-from tests.unit.agents.orchestration.conftest import MockAgentThread
+from tests.unit.agents.orchestration.conftest import MockAgentThread, MockRuntime
 
 if sys.version_info >= (3, 12):
     from typing import override  # pragma: no cover
@@ -71,7 +71,7 @@ async def test_prepare():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = MockRuntime()
 
     package_path = "semantic_kernel.agents.orchestration.concurrent"
     with (
@@ -131,6 +131,30 @@ async def test_invoke_with_response_callback():
         assert all(item.content == "mock_response" for item in responses)
     finally:
         await runtime.stop_when_idle()
+
+
+async def test_invoke_cancel_before_completion():
+    """Test the invoke method of the ConcurrentOrchestration with cancellation before completion."""
+    with (
+        patch.object(MockAgent, "get_response", wraps=MockAgent.get_response, autospec=True) as mock_get_response,
+    ):
+        agent_a = MockAgent()
+        agent_b = MockAgent()
+
+        runtime = SingleThreadedAgentRuntime()
+        runtime.start()
+
+        try:
+            orchestration = ConcurrentOrchestration(members=[agent_a, agent_b])
+            orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
+
+            # Cancel before the collection agent gets the responses
+            await asyncio.sleep(0.05)
+            orchestration_result.cancel()
+        finally:
+            await runtime.stop_when_idle()
+
+        assert mock_get_response.call_count == 2
 
 
 async def test_invoke_cancel_after_completion():

@@ -2,6 +2,8 @@
 
 import sys
 
+from autogen_core import AgentRuntime
+
 from semantic_kernel.agents.agent import AgentThread
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
@@ -25,3 +27,9 @@ class MockAgentThread(AgentThread):
     @override
     async def _on_new_message(self, new_message: ChatMessageContent) -> None:
         pass
+
+
+class MockRuntime(AgentRuntime):
+    """A mock agent runtime for testing purposes."""
+
+    pass

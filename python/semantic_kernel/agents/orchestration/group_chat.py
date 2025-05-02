@@ -232,9 +232,9 @@ class RoundRobinGroupChatManager(GroupChatManager):
         """Check if the group chat should terminate."""
         if self.max_rounds is not None:
             return BoolWithReason(
-                value=self.current_round > self.max_rounds,
+                value=self.current_round >= self.max_rounds,
                 reason="Maximum rounds reached."
-                if self.current_round > self.max_rounds
+                if self.current_round >= self.max_rounds
                 else "Not reached maximum rounds.",
             )
         return BoolWithReason(value=False, reason="No maximum rounds set.")

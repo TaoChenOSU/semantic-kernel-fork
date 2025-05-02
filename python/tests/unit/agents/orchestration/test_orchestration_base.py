@@ -8,19 +8,14 @@ from dataclasses import dataclass
 from unittest.mock import ANY, patch
 
 import pytest
-from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.agent import Agent, AgentResponseItem, AgentThread
-from semantic_kernel.agents.orchestration.orchestration_base import (
-    DefaultTypeAlias,
-    OrchestrationBase,
-    TIn,
-    TOut,
-)
+from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.streaming_chat_message_content import StreamingChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.kernel_pydantic import KernelBaseModel
+from tests.unit.agents.orchestration.conftest import MockRuntime
 
 if sys.version_info >= (3, 12):
     from typing import override  # pragma: no cover
@@ -157,7 +152,7 @@ async def test_orchestration_invoke_with_str():
     orchestration = MockOrchestration(members=[MockAgent(), MockAgent()])
 
     with patch.object(orchestration, "_start") as mock_start:
-        await orchestration.invoke("Test message", SingleThreadedAgentRuntime())
+        await orchestration.invoke("Test message", MockRuntime())
         mock_start.assert_called_once_with(
             ChatMessageContent(role=AuthorRole.USER, content="Test message"), ANY, ANY, ANY
         )
@@ -169,7 +164,7 @@ async def test_orchestration_invoke_with_chat_message_content():
 
     chat_message_content = ChatMessageContent(role=AuthorRole.USER, content="Test message")
     with patch.object(orchestration, "_start") as mock_start:
-        await orchestration.invoke(chat_message_content, SingleThreadedAgentRuntime())
+        await orchestration.invoke(chat_message_content, MockRuntime())
         mock_start.assert_called_once_with(chat_message_content, ANY, ANY, ANY)
 
     chat_message_content_list = [
@@ -177,7 +172,7 @@ async def test_orchestration_invoke_with_chat_message_content():
         ChatMessageContent(role=AuthorRole.USER, content="Test message 2"),
     ]
     with patch.object(orchestration, "_start") as mock_start:
-        await orchestration.invoke(chat_message_content_list, SingleThreadedAgentRuntime())
+        await orchestration.invoke(chat_message_content_list, MockRuntime())
         mock_start.assert_called_once_with(chat_message_content_list, ANY, ANY, ANY)
 
 
@@ -193,7 +188,7 @@ async def test_orchestration_invoke_with_custom_type():
 
     custom_type_instance = CustomType(value="Test message", number=42)
     with patch.object(orchestration, "_start") as mock_start:
-        await orchestration.invoke(custom_type_instance, SingleThreadedAgentRuntime())
+        await orchestration.invoke(custom_type_instance, MockRuntime())
         mock_start.assert_called_once_with(
             ChatMessageContent(role=AuthorRole.USER, content=json.dumps(custom_type_instance.__dict__)), ANY, ANY, ANY
         )
@@ -218,7 +213,7 @@ async def test_orchestration_invoke_with_custom_type_async_input_transform():
 
     custom_type_instance = CustomType(value="Test message", number=42)
     with patch.object(orchestration, "_start") as mock_start:
-        await orchestration.invoke(custom_type_instance, SingleThreadedAgentRuntime())
+        await orchestration.invoke(custom_type_instance, MockRuntime())
         mock_start.assert_called_once_with(
             ChatMessageContent(role=AuthorRole.USER, content="Test message"), ANY, ANY, ANY
         )
@@ -386,7 +381,7 @@ async def test_invoke_with_timeout_error():
     # The orchestration_result will never be set by the MockOrchestration
     orchestration_result = await orchestration.invoke(
         task="test_message",
-        runtime=SingleThreadedAgentRuntime(),
+        runtime=MockRuntime(),
     )
 
     with pytest.raises(asyncio.TimeoutError):
@@ -402,7 +397,7 @@ async def test_invoke_cancel_before_completion():
     # The orchestration_result will never be set by the MockOrchestration
     orchestration_result = await orchestration.invoke(
         task="test_message",
-        runtime=SingleThreadedAgentRuntime(),
+        runtime=MockRuntime(),
     )
 
     # Cancel the orchestration before completion
@@ -421,7 +416,7 @@ async def test_invoke_with_double_cancel():
     # The orchestration_result will never be set by the MockOrchestration
     orchestration_result = await orchestration.invoke(
         task="test_message",
-        runtime=SingleThreadedAgentRuntime(),
+        runtime=MockRuntime(),
     )
 
     orchestration_result.cancel()
