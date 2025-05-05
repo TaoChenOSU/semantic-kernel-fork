@@ -6,18 +6,10 @@ from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
-from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
+from semantic_kernel.contents.chat_message_content import ChatMessageContent
+from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
-
-
-class UserPlugin:
-    @kernel_function
-    def interact_with_user(self, your_name: str, prompt_to_user: str) -> str:
-        """Ask the user for clarification on an issue."""
-        # Simulate asking the user for clarification and getting a response
-        print(f"{your_name}: {prompt_to_user}")
-        return input("User:> ")
 
 
 class OrderStatusPlugin:
@@ -46,6 +38,17 @@ class OrderReturnPlugin:
         return f"Return for order {order_id} has been processed successfully."
 
 
+def agent_response_callback(message: ChatMessageContent) -> None:
+    """Observer function to print the messages from the agents."""
+    print(f"{message.name}: {message.content}")
+
+
+def human_response_function() -> ChatMessageContent:
+    """Observer function to print the messages from the agents."""
+    user_input = input("User: ")
+    return ChatMessageContent(role=AuthorRole.USER, content=user_input)
+
+
 async def main():
     """Main function to run the agents."""
     support_agent = ChatCompletionAgent(
@@ -53,8 +56,6 @@ async def main():
         description="A customer support agent that triages issues.",
         instructions="Handle customer requests.",
         service=OpenAIChatCompletion(),
-        plugins=[UserPlugin()],
-        function_choice_behavior=FunctionChoiceBehavior.Required(),
     )
 
     refund_agent = ChatCompletionAgent(
@@ -62,8 +63,7 @@ async def main():
         description="A customer support agent that handles refunds.",
         instructions="Handle refund requests.",
         service=OpenAIChatCompletion(),
-        plugins=[UserPlugin(), OrderRefundPlugin()],
-        function_choice_behavior=FunctionChoiceBehavior.Required(),
+        plugins=[OrderRefundPlugin()],
     )
 
     order_status_agent = ChatCompletionAgent(
@@ -71,8 +71,7 @@ async def main():
         description="A customer support agent that checks order status.",
         instructions="Handle order status requests.",
         service=OpenAIChatCompletion(),
-        plugins=[UserPlugin(), OrderStatusPlugin()],
-        function_choice_behavior=FunctionChoiceBehavior.Required(),
+        plugins=[OrderStatusPlugin()],
     )
 
     order_return_agent = ChatCompletionAgent(
@@ -80,53 +79,63 @@ async def main():
         description="A customer support agent that handles order returns.",
         instructions="Handle order return requests.",
         service=OpenAIChatCompletion(),
-        plugins=[UserPlugin(), OrderReturnPlugin()],
-        function_choice_behavior=FunctionChoiceBehavior.Required(),
+        plugins=[OrderReturnPlugin()],
     )
 
+    handoffs: dict[str, list[HandoffConnection]] = {
+        support_agent.name: [
+            HandoffConnection(
+                agent_name=refund_agent.name,
+                description="Transfer to this agent if the issue is refund related",
+            ),
+            HandoffConnection(
+                agent_name=order_status_agent.name,
+                description="Transfer to this agent if the issue is order status related",
+            ),
+            HandoffConnection(
+                agent_name=order_return_agent.name,
+                description="Transfer to this agent if the issue is order return related",
+            ),
+        ],
+        refund_agent.name: [
+            HandoffConnection(
+                agent_name=support_agent.name,
+                description="Transfer to this agent if the issue is not refund related",
+            )
+        ],
+        order_status_agent.name: [
+            HandoffConnection(
+                agent_name=support_agent.name,
+                description="Transfer to this agent if the issue is not order status related",
+            )
+        ],
+        order_return_agent.name: [
+            HandoffConnection(
+                agent_name=support_agent.name,
+                description="Transfer to this agent if the issue is not order return related",
+            )
+        ],
+    }
+
     handoff_orchestration = HandoffOrchestration(
-        members=[support_agent, refund_agent, order_status_agent, order_return_agent],
-        handoffs={
-            support_agent.name: [
-                HandoffConnection(
-                    agent_name=refund_agent.name,
-                    description="Transfer to this agent if the issue is refund related",
-                ),
-                HandoffConnection(
-                    agent_name=order_status_agent.name,
-                    description="Transfer to this agent if the issue is order status related",
-                ),
-                HandoffConnection(
-                    agent_name=order_return_agent.name,
-                    description="Transfer to this agent if the issue is order return related",
-                ),
-            ],
-            refund_agent.name: [
-                HandoffConnection(
-                    agent_name=support_agent.name,
-                    description="Transfer to this agent if the issue is not refund related",
-                )
-            ],
-            order_status_agent.name: [
-                HandoffConnection(
-                    agent_name=support_agent.name,
-                    description="Transfer to this agent if the issue is not order status related",
-                )
-            ],
-            order_return_agent.name: [
-                HandoffConnection(
-                    agent_name=support_agent.name,
-                    description="Transfer to this agent if the issue is not order return related",
-                )
-            ],
-        },
+        members=[
+            support_agent,
+            refund_agent,
+            order_status_agent,
+            order_return_agent,
+        ],
+        handoffs=handoffs,
+        agent_response_callback=agent_response_callback,
+        human_response_function=human_response_function,
     )
 
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    # TODO(@taochen): This is not working as expected.
-    orchestration_result = await handoff_orchestration.invoke(task="A customer is on the line.", runtime=runtime)
+    orchestration_result = await handoff_orchestration.invoke(
+        task="A customer is on the line.",
+        runtime=runtime,
+    )
 
     value = await orchestration_result.get()
     print(value)

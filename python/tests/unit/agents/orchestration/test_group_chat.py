@@ -197,8 +197,8 @@ async def test_invoke_cancel_before_completion():
             )
             orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
 
-            # Cancel while the second agent is processing
-            await asyncio.sleep(0.15)
+            # Cancel before the second agent responds
+            await asyncio.sleep(0.19)
             orchestration_result.cancel()
         finally:
             await runtime.stop_when_idle()

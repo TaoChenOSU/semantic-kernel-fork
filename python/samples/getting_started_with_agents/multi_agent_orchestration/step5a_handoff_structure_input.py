@@ -85,6 +85,11 @@ def custom_input_transform(input_message: GithubIssue) -> ChatMessageContent:
     return ChatMessageContent(role=AuthorRole.USER, content=input_message.model_dump_json())
 
 
+def agent_response_callback(message: ChatMessageContent) -> None:
+    """Observer function to print the messages from the agents."""
+    print(f"{message.name}: {message.content}")
+
+
 async def main():
     """Main function to run the agents."""
     triage_agent = ChatCompletionAgent(
@@ -123,12 +128,16 @@ async def main():
             ]
         },
         input_transform=custom_input_transform,
+        agent_response_callback=agent_response_callback,
     )
 
     runtime = SingleThreadedAgentRuntime()
     runtime.start()
 
-    orchestration_result = await handoff_orchestration.invoke(task=GithubIssue_12345, runtime=runtime)
+    orchestration_result = await handoff_orchestration.invoke(
+        task=GithubIssue_12345,
+        runtime=runtime,
+    )
 
     value = await orchestration_result.get(timeout=100)
     print(value)

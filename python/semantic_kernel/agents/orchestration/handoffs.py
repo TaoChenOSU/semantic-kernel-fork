@@ -2,6 +2,7 @@
 
 
 import asyncio
+import inspect
 import logging
 import sys
 from collections.abc import Awaitable, Callable
@@ -78,7 +79,8 @@ class HandoffAgentActor(AgentActorBase):
         internal_topic_type: str,
         handoff_topic_connections: list[HandoffConnection],
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
-        agent_response_callback: Callable[[str | DefaultTypeAlias], Awaitable[None] | None] | None = None,
+        agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
+        human_response_function: Callable[[], Awaitable[ChatMessageContent] | ChatMessageContent] | None = None,
     ) -> None:
         """Initialize the handoff agent actor."""
         self._handoff_topic_connections = handoff_topic_connections
@@ -86,6 +88,10 @@ class HandoffAgentActor(AgentActorBase):
 
         self._kernel = agent.kernel.model_copy()
         self._add_handoff_functions()
+
+        self._handoff_agent_name: str | None = None
+        self._task_completed = False
+        self._human_response_function = human_response_function
 
         super().__init__(
             agent=agent,
@@ -124,17 +130,14 @@ class HandoffAgentActor(AgentActorBase):
                     method=partial(self._handoff_to_agent, connection.agent_name),
                 )
             )
-        functions.append(KernelFunctionFromMethod(self._end_task, plugin_name=HANDOFF_PLUGIN_NAME))
+        functions.append(KernelFunctionFromMethod(self._complete_task, plugin_name=HANDOFF_PLUGIN_NAME))
         self._kernel.add_plugin(plugin=KernelPlugin(name=HANDOFF_PLUGIN_NAME, functions=functions))
         self._kernel.add_filter(FilterTypes.AUTO_FUNCTION_INVOCATION, self._handoff_function_filter)
 
     async def _handoff_to_agent(self, agent_name: str) -> None:
         """Handoff the conversation to another agent."""
-        logger.debug(f"{self.id}: Handoff to agent {agent_name}.")
-        await self.publish_message(
-            HandoffRequestMessage(agent_name=agent_name),
-            TopicId(self._internal_topic_type, self.id.key),
-        )
+        logger.debug(f"{self.id}: Setting handoff agent name to {agent_name}.")
+        self._handoff_agent_name = agent_name
 
     async def _handoff_function_filter(self, context: AutoFunctionInvocationContext, next):
         """A filter to terminate an agent when it decides to handoff the conversation to another agent."""
@@ -142,12 +145,21 @@ class HandoffAgentActor(AgentActorBase):
         if context.function.plugin_name == HANDOFF_PLUGIN_NAME:
             context.terminate = True
 
-    @kernel_function(description="End the task with a summary when needed.")
-    async def _end_task(self, task_summary: str) -> None:
+    @kernel_function(
+        name="complete_task", description="Complete the task with a summary when no further requests are given."
+    )
+    async def _complete_task(self, task_summary: str) -> None:
         """End the task with a summary."""
-        logger.debug(f"{self.id}: Ending task with summary: {task_summary}")
+        logger.debug(f"{self.id}: Completing task with summary: {task_summary}")
         if self._result_callback:
-            await self._result_callback(ChatMessageContent(role=AuthorRole.ASSISTANT, content=task_summary))
+            await self._result_callback(
+                ChatMessageContent(
+                    role=AuthorRole.ASSISTANT,
+                    name=self._agent.name,
+                    content=f"Task is completed with summary: {task_summary}",
+                )
+            )
+        self._task_completed = True
 
     @message_handler
     async def _handle_start_message(self, message: HandoffStartMessage, cts: MessageContext) -> None:
@@ -171,22 +183,8 @@ class HandoffAgentActor(AgentActorBase):
         """Handle a response message from an agent in the handoff group."""
         logger.debug(f"{self.id}: Received handoff response message.")
         if self._agent_thread is not None:
-            if message.body.role != AuthorRole.USER:
-                await self._agent_thread.on_new_message(
-                    ChatMessageContent(
-                        role=AuthorRole.USER,
-                        content=f"Transferred to {message.body.name}",
-                    )
-                )
             await self._agent_thread.on_new_message(message.body)
         else:
-            if message.body.role != AuthorRole.USER:
-                self._chat_history.add_message(
-                    ChatMessageContent(
-                        role=AuthorRole.USER,
-                        content=f"Transferred to {message.body.name}",
-                    )
-                )
             self._chat_history.add_message(message.body)
 
     @message_handler
@@ -195,6 +193,7 @@ class HandoffAgentActor(AgentActorBase):
         if message.agent_name != self._agent.name:
             return
         logger.debug(f"{self.id}: Received handoff request message.")
+
         if self._agent_thread is None:
             self._chat_history.add_message(
                 ChatMessageContent(
@@ -202,12 +201,12 @@ class HandoffAgentActor(AgentActorBase):
                     content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
                 )
             )
-            responses = self._agent.invoke(
+            response_item = await self._agent.get_response(
                 messages=self._chat_history.messages,
                 kernel=self._kernel,
             )
         else:
-            responses = self._agent.invoke(
+            response_item = await self._agent.get_response(
                 messages=ChatMessageContent(
                     role=AuthorRole.USER,
                     content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
@@ -216,24 +215,54 @@ class HandoffAgentActor(AgentActorBase):
                 kernel=self._kernel,
             )
 
-        async for response_item in responses:
-            if self._agent_thread is None:
-                self._agent_thread = response_item.thread
+        if self._agent_thread is None:
+            self._agent_thread = response_item.thread
 
-            await self._call_agent_response_callback(response_item.message)
-
+        while not self._task_completed:
             if response_item.message.role == AuthorRole.ASSISTANT:
                 # The response can potentially be a TOOL message from the Handoff plugin
                 # since we have added a filter which will terminate the conversation when
                 # a function from the handoff plugin is called. And we don't want to publish
                 # that message. So we only publish if the response is an ASSISTANT message.
                 logger.debug(f"{self.id} responded with: {response_item.message.content}")
+                await self._call_agent_response_callback(response_item.message)
 
                 await self.publish_message(
                     HandoffResponseMessage(body=response_item.message),
                     TopicId(self._internal_topic_type, self.id.key),
                     cancellation_token=cts.cancellation_token,
                 )
+
+            if self._handoff_agent_name:
+                await self.publish_message(
+                    HandoffRequestMessage(agent_name=self._handoff_agent_name),
+                    TopicId(self._internal_topic_type, self.id.key),
+                )
+                self._handoff_agent_name = None
+                break
+            if self._human_response_function:
+                human_response = await self._call_human_response_function()
+                await self.publish_message(
+                    HandoffResponseMessage(body=human_response),
+                    TopicId(self._internal_topic_type, self.id.key),
+                    cancellation_token=cts.cancellation_token,
+                )
+                response_item = await self._agent.get_response(
+                    messages=human_response,
+                    thread=self._agent_thread,
+                    kernel=self._kernel,
+                )
+            else:
+                await self._complete_task(
+                    task_summary="No handoff agent name provided and no human response function set. Ending task."
+                )
+                break
+
+    async def _call_human_response_function(self) -> ChatMessageContent:
+        """Call the human response function if it is set."""
+        if inspect.iscoroutinefunction(self._human_response_function):
+            return await self._human_response_function()
+        return self._human_response_function()
 
 
 # endregion HandoffAgentActor
@@ -246,18 +275,19 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
 
     def __init__(
         self,
-        members: list[Agent | OrchestrationBase],
+        members: list[Agent],
         handoffs: dict[str, list[HandoffConnection]],
         name: str | None = None,
         description: str | None = None,
         input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
         output_transform: Callable[[DefaultTypeAlias], Awaitable[TOut] | TOut] | None = None,
         agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
+        human_response_function: Callable[[], Awaitable[ChatMessageContent] | ChatMessageContent] | None = None,
     ) -> None:
         """Initialize the handoff orchestration.
 
         Args:
-            members (list[Agent | OrchestrationBase]): A list of agents or orchestrations that are part of the
+            members (list[Agent]): A list of agents or orchestrations that are part of the
                 handoff group. This first agent in the list will be the one that receives the first message.
             handoffs (dict[str, list[HandoffConnection]]): A dictionary mapping agent names to their handoff
                 connections.
@@ -267,8 +297,11 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
             output_transform (Callable | None): A function that transforms the internal output message.
             agent_response_callback (Callable | None): A function that is called when a response is produced
                 by the agents.
+            human_response_function (Callable | None): A function that is called when a human response is
+                needed.
         """
         self._handoffs = handoffs
+        self._human_response_function = human_response_function
 
         super().__init__(
             members=members,
@@ -278,6 +311,8 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
             output_transform=output_transform,
             agent_response_callback=agent_response_callback,
         )
+
+        self._validate_handoffs()
 
     @override
     async def _start(
@@ -301,7 +336,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
             await runtime.send_message(
                 HandoffStartMessage(body=task),
                 target_actor_id,
-                cancellation_token=task.cancellation_token,
+                cancellation_token=cancellation_token,
             )
 
         await asyncio.gather(*[send_start_message(agent) for agent in self._members])
@@ -332,24 +367,23 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the members with the runtime."""
-        member_names = {m.name for m in self._members if isinstance(m, Agent)}
-        for member in self._members:
-            handoff_connections = self._handoffs.get(member.name, [])
-            for connection in handoff_connections:
-                if connection.agent_name not in member_names:
-                    logger.warning(f"Agent {connection.agent_name} is not a member of the handoff group.")
 
+        async def _register_helper(agent: Agent) -> None:
+            handoff_connections = self._handoffs.get(agent.name, [])
             await HandoffAgentActor.register(
                 runtime,
-                self._get_agent_actor_type(member, internal_topic_type),
-                lambda member=member, handoff_connections=handoff_connections: HandoffAgentActor(
-                    member,
+                self._get_agent_actor_type(agent, internal_topic_type),
+                lambda agent=agent, handoff_connections=handoff_connections: HandoffAgentActor(
+                    agent,
                     internal_topic_type,
                     handoff_connections,
                     result_callback=result_callback,
                     agent_response_callback=self._agent_response_callback,
+                    human_response_function=self._human_response_function,
                 ),
             )
+
+        await asyncio.gather(*[_register_helper(member) for member in self._members])
 
     async def _add_subscriptions(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
         """Add subscriptions to the runtime."""
@@ -370,6 +404,21 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         that may be shared by multiple orchestrations.
         """
         return f"{agent.name}_{internal_topic_type}"
+
+    def _validate_handoffs(self) -> None:
+        """Validate the handoffs to ensure all connections are valid."""
+        if not self._handoffs:
+            raise ValueError("Handoffs cannot be empty. Please provide at least one handoff connection.")
+
+        member_names = {m.name for m in self._members}
+        for agent_name, connections in self._handoffs.items():
+            if agent_name not in member_names:
+                raise ValueError(f"Agent {agent_name} is not a member of the handoff group.")
+            for connection in connections:
+                if connection.agent_name not in member_names:
+                    raise ValueError(f"Agent {connection.agent_name} is not a member of the handoff group.")
+                if connection.agent_name == agent_name:
+                    raise ValueError(f"Agent {agent_name} cannot handoff to itself.")
 
 
 # endregion HandoffOrchestration
