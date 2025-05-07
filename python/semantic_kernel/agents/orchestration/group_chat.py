@@ -138,7 +138,9 @@ class GroupChatAgentActor(AgentActorBase):
                     content=f"Transferred to {self._agent.name}, adopt the persona immediately.",
                 )
             )
-            response_item = await self._agent.get_response(messages=self._chat_history.messages)
+            response_item = await self._agent.get_response(
+                messages=self._chat_history.messages,  # type: ignore[arg-type]
+            )
             self._agent_thread = response_item.thread
         else:
             # Add a user message to steer the agent to respond more closely to the instructions.
@@ -406,6 +408,10 @@ class GroupChatOrchestration(OrchestrationBase[TIn, TOut]):
         """
         self._manager = manager
 
+        for member in members:
+            if member.description is None:
+                raise ValueError("All members must have a description.")
+
         super().__init__(
             members=members,
             name=name,
@@ -455,7 +461,7 @@ class GroupChatOrchestration(OrchestrationBase[TIn, TOut]):
         self,
         runtime: CoreRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TOut], None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
@@ -468,7 +474,7 @@ class GroupChatOrchestration(OrchestrationBase[TIn, TOut]):
             GroupChatAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type, self._agent_response_callback),
+                lambda agent=agent: GroupChatAgentActor(agent, internal_topic_type, self._agent_response_callback),  # type: ignore[misc]
             )
             for agent in self._members
         ])
@@ -486,7 +492,7 @@ class GroupChatOrchestration(OrchestrationBase[TIn, TOut]):
             lambda: GroupChatManagerActor(
                 self._manager,
                 internal_topic_type=internal_topic_type,
-                participant_descriptions={agent.name: agent.description for agent in self._members},
+                participant_descriptions={agent.name: agent.description for agent in self._members},  # type: ignore[misc]
                 result_callback=result_callback,
             ),
         )

@@ -562,6 +562,10 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         """
         self._manager = manager
 
+        for member in members:
+            if member.description is None:
+                raise ValueError("All members must have a description.")
+
         super().__init__(
             members=members,
             name=name,
@@ -613,21 +617,24 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         self,
         runtime: CoreRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TOut], None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type)
         await self._register_manager(runtime, internal_topic_type, result_callback=result_callback)
         await self._add_subscriptions(runtime, internal_topic_type)
 
-    @override
     async def _register_members(self, runtime: CoreRuntime, internal_topic_type: str) -> None:
         """Register the agents."""
         await asyncio.gather(*[
             MagenticOneAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: MagenticOneAgentActor(agent, internal_topic_type, self._agent_response_callback),
+                lambda agent=agent: MagenticOneAgentActor(  # type: ignore[misc]
+                    agent,
+                    internal_topic_type,
+                    self._agent_response_callback,
+                ),
             )
             for agent in self._members
         ])
@@ -645,7 +652,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
             lambda: MagenticOneManagerActor(
                 self._manager,
                 internal_topic_type=internal_topic_type,
-                participant_descriptions={agent.name: agent.description for agent in self._members},
+                participant_descriptions={agent.name: agent.description for agent in self._members},  # type: ignore[misc]
                 result_callback=result_callback,
             ),
         )
@@ -660,7 +667,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
 
         await asyncio.gather(*[runtime.add_subscription(sub) for sub in subscriptions])
 
-    def _get_agent_actor_type(self, agent: Agent | str, internal_topic_type: str) -> str:
+    def _get_agent_actor_type(self, agent: Agent, internal_topic_type: str) -> str:
         """Get the actor type for an agent.
 
         The type is appended with the internal topic type to ensure uniqueness in the runtime

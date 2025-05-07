@@ -215,12 +215,12 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         elif isinstance(task, ChatMessageContent) or (
             isinstance(task, list) and all(isinstance(item, ChatMessageContent) for item in task)
         ):
-            prepared_task = task
+            prepared_task = task  # type: ignore[assignment]
         else:
             if inspect.iscoroutinefunction(self._input_transform):
                 prepared_task = await self._input_transform(task)  # type: ignore[arg-type]
             else:
-                prepared_task = self._input_transform(task)  # type: ignore[arg-type]
+                prepared_task = self._input_transform(task)  # type: ignore[arg-type,assignment]
 
         background_task = asyncio.create_task(
             self._start(

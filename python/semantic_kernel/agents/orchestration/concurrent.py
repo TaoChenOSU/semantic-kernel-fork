@@ -66,7 +66,9 @@ class ConcurrentAgentActor(AgentActorBase):
         """Handle a message."""
         logger.debug(f"Concurrent actor (Actor ID: {self.id}; Agent name: {self._agent.name}) started processing...")
 
-        response = await self._agent.get_response(messages=message.body)
+        response = await self._agent.get_response(
+            messages=message.body,  # type: ignore[arg-type]
+        )
 
         logger.debug(f"Concurrent actor (Actor ID: {self.id}; Agent name: {self._agent.name}) finished processing.")
 

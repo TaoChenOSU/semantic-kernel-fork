@@ -39,10 +39,25 @@ class MockChatCompletionService(ChatCompletionClientBase):
 # region MagenticOneOrchestration
 
 
-async def test_prepare():
-    """Test the prepare method of the MagenticOneOrchestration."""
+async def test_init_member_without_description_throws():
+    """Test the prepare method of the MagenticOneOrchestration with a member without description."""
     agent_a = MockAgent()
     agent_b = MockAgent()
+
+    with pytest.raises(ValueError):
+        MagenticOneOrchestration(
+            members=[agent_a, agent_b],
+            manager=MagenticOneManager(
+                chat_completion_service=MockChatCompletionService(ai_model_id="test"),
+                prompt_execution_settings=PromptExecutionSettings(),
+            ),
+        )
+
+
+async def test_prepare():
+    """Test the prepare method of the MagenticOneOrchestration."""
+    agent_a = MockAgent(description="test agent")
+    agent_b = MockAgent(description="test agent")
 
     runtime = MockRuntime()
 
@@ -160,8 +175,8 @@ async def test_invoke():
             prompt_execution_settings=prompt_execution_settings,
         )
 
-        agent_a = MockAgent(name="agent_a")
-        agent_b = MockAgent(name="agent_b")
+        agent_a = MockAgent(name="agent_a", description="test agent")
+        agent_b = MockAgent(name="agent_b", description="test agent")
 
         runtime = InProcessRuntime()
         runtime.start()
@@ -192,8 +207,8 @@ async def test_invoke_with_list_error():
         prompt_execution_settings=prompt_execution_settings,
     )
 
-    agent_a = MockAgent(name="agent_a")
-    agent_b = MockAgent(name="agent_b")
+    agent_a = MockAgent(name="agent_a", description="test agent")
+    agent_b = MockAgent(name="agent_b", description="test agent")
 
     messages = [
         ChatMessageContent(role=AuthorRole.USER, content="test_message_1"),
@@ -232,8 +247,8 @@ async def test_invoke_with_response_callback():
     ):
         mock_get_chat_message_content.return_value = ChatMessageContent(role="assistant", content="mock_response")
 
-        agent_a = MockAgent(name="agent_a")
-        agent_b = MockAgent(name="agent_b")
+        agent_a = MockAgent(name="agent_a", description="test agent")
+        agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
             orchestration = MagenticOneOrchestration(
@@ -273,8 +288,8 @@ async def test_invoke_with_max_stall_count_exceeded():
     ):
         mock_get_chat_message_content.return_value = ChatMessageContent(role="assistant", content="mock_response")
 
-        agent_a = MockAgent(name="agent_a")
-        agent_b = MockAgent(name="agent_b")
+        agent_a = MockAgent(name="agent_a", description="test agent")
+        agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
             orchestration = MagenticOneOrchestration(
@@ -316,8 +331,8 @@ async def test_invoke_with_unknown_speaker():
     ):
         mock_get_chat_message_content.return_value = ChatMessageContent(role="assistant", content="mock_response")
 
-        agent_a = MockAgent(name="agent_a")
-        agent_b = MockAgent(name="agent_b")
+        agent_a = MockAgent(name="agent_a", description="test agent")
+        agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
             orchestration = MagenticOneOrchestration(

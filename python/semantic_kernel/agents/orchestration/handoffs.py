@@ -103,13 +103,12 @@ class HandoffAgentActor(AgentActorBase):
             agent_response_callback=agent_response_callback,
         )
 
-    def _add_handoff_functions(self):
+    def _add_handoff_functions(self) -> None:
         """Add handoff functions to the agent's kernel."""
         functions: list[KernelFunctionFromMethod] = []
         for connection in self._handoff_topic_connections:
             function_name = f"transfer_to_{connection.agent_name}"
             function_description = connection.description
-            parameters = []
             return_parameter = KernelParameterMetadata(
                 name="return",
                 description="",
@@ -121,7 +120,7 @@ class HandoffAgentActor(AgentActorBase):
             function_metadata = KernelFunctionMetadata(
                 name=function_name,
                 description=function_description,
-                parameters=parameters,
+                parameters=[],
                 return_parameter=return_parameter,
                 is_prompt=False,
                 is_asynchronous=True,
@@ -206,7 +205,7 @@ class HandoffAgentActor(AgentActorBase):
                 )
             )
             response_item = await self._agent.get_response(
-                messages=self._chat_history.messages,
+                messages=self._chat_history.messages,  # type: ignore[arg-type]
                 kernel=self._kernel,
             )
         else:
@@ -264,9 +263,10 @@ class HandoffAgentActor(AgentActorBase):
 
     async def _call_human_response_function(self) -> ChatMessageContent:
         """Call the human response function if it is set."""
+        assert self._human_response_function  # nosec B101
         if inspect.iscoroutinefunction(self._human_response_function):
             return await self._human_response_function()
-        return self._human_response_function()
+        return self._human_response_function()  # type: ignore[return-value]
 
 
 # endregion HandoffAgentActor
@@ -358,7 +358,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         self,
         runtime: CoreRuntime,
         internal_topic_type: str,
-        result_callback: Callable[[TOut], None] | None = None,
+        result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions."""
         await self._register_members(runtime, internal_topic_type, result_callback)
@@ -377,7 +377,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
             await HandoffAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent, handoff_connections=handoff_connections: HandoffAgentActor(
+                lambda agent=agent, handoff_connections=handoff_connections: HandoffAgentActor(  # type: ignore[misc]
                     agent,
                     internal_topic_type,
                     handoff_connections,

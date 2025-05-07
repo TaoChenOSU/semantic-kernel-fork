@@ -16,10 +16,19 @@ from tests.unit.agents.orchestration.conftest import MockAgent, MockRuntime
 # region GroupChatOrchestration
 
 
-async def test_prepare():
-    """Test the prepare method of the GroupChatOrchestration."""
+async def test_init_member_without_description_throws():
+    """Test the prepare method of the GroupChatOrchestration with a member without description."""
     agent_a = MockAgent()
     agent_b = MockAgent()
+
+    with pytest.raises(ValueError):
+        GroupChatOrchestration(members=[agent_a, agent_b], manager=RoundRobinGroupChatManager())
+
+
+async def test_prepare():
+    """Test the prepare method of the GroupChatOrchestration."""
+    agent_a = MockAgent(description="test agent")
+    agent_b = MockAgent(description="test agent")
 
     runtime = MockRuntime()
 
@@ -43,8 +52,8 @@ async def test_invoke():
     with (
         patch.object(MockAgent, "get_response", wraps=MockAgent.get_response, autospec=True) as mock_get_response,
     ):
-        agent_a = MockAgent()
-        agent_b = MockAgent()
+        agent_a = MockAgent(description="test agent")
+        agent_b = MockAgent(description="test agent")
 
         runtime = InProcessRuntime()
         runtime.start()
@@ -72,8 +81,8 @@ async def test_invoke_with_list():
     with (
         patch.object(MockAgent, "get_response", wraps=MockAgent.get_response, autospec=True) as mock_get_response,
     ):
-        agent_a = MockAgent()
-        agent_b = MockAgent()
+        agent_a = MockAgent(description="test agent")
+        agent_b = MockAgent(description="test agent")
 
         runtime = InProcessRuntime()
         runtime.start()
@@ -102,8 +111,8 @@ async def test_invoke_with_list():
 
 async def test_invoke_with_response_callback():
     """Test the invoke method of the GroupChatOrchestration with a response callback."""
-    agent_a = MockAgent()
-    agent_b = MockAgent()
+    agent_a = MockAgent(description="test agent")
+    agent_b = MockAgent(description="test agent")
 
     runtime = InProcessRuntime()
     runtime.start()
@@ -130,8 +139,8 @@ async def test_invoke_cancel_before_completion():
     with (
         patch.object(MockAgent, "get_response", wraps=MockAgent.get_response, autospec=True) as mock_get_response,
     ):
-        agent_a = MockAgent()
-        agent_b = MockAgent()
+        agent_a = MockAgent(description="test agent")
+        agent_b = MockAgent(description="test agent")
 
         runtime = InProcessRuntime()
         runtime.start()
@@ -154,8 +163,8 @@ async def test_invoke_cancel_before_completion():
 
 async def test_invoke_cancel_after_completion():
     """Test the invoke method of the GroupChatOrchestration with cancellation after completion."""
-    agent_a = MockAgent()
-    agent_b = MockAgent()
+    agent_a = MockAgent(description="test agent")
+    agent_b = MockAgent(description="test agent")
 
     runtime = InProcessRuntime()
     runtime.start()
