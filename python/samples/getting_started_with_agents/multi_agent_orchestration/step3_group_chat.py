@@ -3,8 +3,6 @@
 import asyncio
 import sys
 
-from autogen_core import SingleThreadedAgentRuntime
-
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.group_chat import (
     BoolWithReason,
@@ -13,6 +11,7 @@ from semantic_kernel.agents.orchestration.group_chat import (
     GroupChatOrchestration,
     StringWithReason,
 )
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
@@ -303,7 +302,7 @@ async def main():
         agent_response_callback=agent_response_callback,
     )
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     orchestration_result = await group_chat_orchestration.invoke(

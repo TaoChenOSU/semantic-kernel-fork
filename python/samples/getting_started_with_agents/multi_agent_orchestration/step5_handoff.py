@@ -2,10 +2,9 @@
 
 import asyncio
 
-from autogen_core import SingleThreadedAgentRuntime
-
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
@@ -129,7 +128,7 @@ async def main():
         human_response_function=human_response_function,
     )
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     orchestration_result = await handoff_orchestration.invoke(

@@ -5,8 +5,6 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, CancellationToken, MessageContext, TopicId, TypeSubscription, message_handler
-
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
@@ -19,6 +17,12 @@ from semantic_kernel.agents.orchestration.prompts._magentic_one_prompts import (
     ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
     ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
 )
+from semantic_kernel.agents.runtime.core.cancellation_token import CancellationToken
+from semantic_kernel.agents.runtime.core.core_runtime import CoreRuntime
+from semantic_kernel.agents.runtime.core.message_context import MessageContext
+from semantic_kernel.agents.runtime.core.routed_agent import message_handler
+from semantic_kernel.agents.runtime.core.topic import TopicId
+from semantic_kernel.agents.runtime.in_process.type_subscription import TypeSubscription
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
 from semantic_kernel.contents.chat_history import ChatHistory
@@ -571,7 +575,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
     async def _start(
         self,
         task: DefaultTypeAlias,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
     ) -> None:
@@ -607,7 +611,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
     @override
     async def _prepare(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         result_callback: Callable[[TOut], None] | None = None,
     ) -> None:
@@ -617,7 +621,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         await self._add_subscriptions(runtime, internal_topic_type)
 
     @override
-    async def _register_members(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
+    async def _register_members(self, runtime: CoreRuntime, internal_topic_type: str) -> None:
         """Register the agents."""
         await asyncio.gather(*[
             MagenticOneAgentActor.register(
@@ -630,7 +634,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
 
     async def _register_manager(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
@@ -646,7 +650,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
             ),
         )
 
-    async def _add_subscriptions(self, runtime: AgentRuntime, internal_topic_type: str) -> None:
+    async def _add_subscriptions(self, runtime: CoreRuntime, internal_topic_type: str) -> None:
         subscriptions: list[TypeSubscription] = []
         for agent in self._members:
             subscriptions.append(

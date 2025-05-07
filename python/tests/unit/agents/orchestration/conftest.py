@@ -4,9 +4,8 @@ import asyncio
 import sys
 from collections.abc import AsyncIterable, Awaitable, Callable
 
-from autogen_core import AgentRuntime
-
 from semantic_kernel.agents.agent import Agent, AgentResponseItem, AgentThread
+from semantic_kernel.agents.runtime.core.core_runtime import CoreRuntime
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.streaming_chat_message_content import StreamingChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
@@ -77,7 +76,7 @@ class MockAgent(Agent):
         pass
 
 
-class MockRuntime(AgentRuntime):
+class MockRuntime(CoreRuntime):
     """A mock agent runtime for testing purposes."""
 
     pass

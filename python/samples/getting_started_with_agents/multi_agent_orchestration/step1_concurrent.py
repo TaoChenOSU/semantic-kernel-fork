@@ -2,10 +2,9 @@
 
 import asyncio
 
-from autogen_core import SingleThreadedAgentRuntime
-
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
@@ -29,7 +28,7 @@ async def main():
         members=[physics_agent, chemistry_agent],
     )
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     orchestration_result = await concurrent_orchestration.invoke(

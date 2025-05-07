@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.orchestration.magentic_one import (
     MagenticOneManager,
@@ -22,6 +21,7 @@ from semantic_kernel.agents.orchestration.prompts._magentic_one_prompts import (
     ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
     ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
 )
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
 from semantic_kernel.contents.chat_history import ChatHistory
@@ -163,7 +163,7 @@ async def test_invoke():
         agent_a = MockAgent(name="agent_a")
         agent_b = MockAgent(name="agent_b")
 
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         try:
@@ -217,7 +217,7 @@ async def test_invoke_with_list_error():
 async def test_invoke_with_response_callback():
     """Test the invoke method of the MagenticOneOrchestration with a response callback."""
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     responses: list[DefaultTypeAlias] = []
@@ -256,7 +256,7 @@ async def test_invoke_with_response_callback():
 
 async def test_invoke_with_max_stall_count_exceeded():
     """ "Test the invoke method of the MagenticOneOrchestration with max stall count exceeded."""
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     with (
@@ -298,7 +298,7 @@ async def test_invoke_with_max_stall_count_exceeded():
 
 async def test_invoke_with_unknown_speaker():
     """Test the invoke method of the MagenticOneOrchestration with an unknown speaker."""
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     with (

@@ -6,10 +6,10 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from autogen_core import MessageContext, RoutedAgent
-
 from semantic_kernel.agents.agent import Agent, AgentThread
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias
+from semantic_kernel.agents.runtime.core.message_context import MessageContext
+from semantic_kernel.agents.runtime.core.routed_agent import RoutedAgent
 from semantic_kernel.contents.chat_history import ChatHistory
 
 if sys.version_info >= (3, 12):

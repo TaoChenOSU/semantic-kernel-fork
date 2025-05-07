@@ -3,11 +3,10 @@
 import asyncio
 import os
 
-from autogen_core import SingleThreadedAgentRuntime
-
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
 from semantic_kernel.agents.orchestration.tools import structure_output_transform
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
@@ -46,7 +45,7 @@ async def main():
         output_transform=structure_output_transform(ArticleAnalysis, OpenAIChatCompletion()),
     )
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     with open(os.path.join(os.path.dirname(__file__), "../resources", "Hamlet_full_play_summary.txt")) as file:
@@ -57,7 +56,7 @@ async def main():
         runtime=runtime,
     )
 
-    value = await orchestration_result.get(timeout=10)
+    value = await orchestration_result.get(timeout=20)
     if isinstance(value, ArticleAnalysis):
         print(value.model_dump_json(indent=2))
     else:

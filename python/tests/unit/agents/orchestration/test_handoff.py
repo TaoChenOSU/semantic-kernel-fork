@@ -6,7 +6,6 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from unittest.mock import patch
 
 import pytest
-from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.agent import Agent, AgentResponseItem, AgentThread
 from semantic_kernel.agents.orchestration.handoffs import (
@@ -16,6 +15,7 @@ from semantic_kernel.agents.orchestration.handoffs import (
     HandoffOrchestration,
 )
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.function_call_content import FunctionCallContent
@@ -185,7 +185,7 @@ async def test_invoke():
         agent_b = MockAgent()
         agent_c = MockAgent()
 
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         try:
@@ -224,7 +224,7 @@ async def test_invoke_with_list():
         agent_a = MockAgent()
         agent_b = MockAgent()
 
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         messages = [
@@ -256,7 +256,7 @@ async def test_invoke_with_response_callback():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     responses: list[DefaultTypeAlias] = []
@@ -290,7 +290,7 @@ async def test_invoke_with_handoff_function_call():
             HandoffAgentActor, "_handoff_to_agent", wraps=HandoffAgentActor._handoff_to_agent, autospec=True
         ) as mock_handoff_to_agent,
     ):
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         try:
@@ -319,7 +319,7 @@ async def test_invoke_cancel_before_completion():
         agent_a = MockAgent()
         agent_b = MockAgent()
 
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         try:
@@ -347,7 +347,7 @@ async def test_invoke_cancel_after_completion():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     try:

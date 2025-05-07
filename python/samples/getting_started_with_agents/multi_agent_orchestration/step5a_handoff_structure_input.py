@@ -3,10 +3,9 @@
 import asyncio
 from enum import Enum
 
-from autogen_core import SingleThreadedAgentRuntime
-
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
@@ -85,11 +84,6 @@ def custom_input_transform(input_message: GithubIssue) -> ChatMessageContent:
     return ChatMessageContent(role=AuthorRole.USER, content=input_message.model_dump_json())
 
 
-def agent_response_callback(message: ChatMessageContent) -> None:
-    """Observer function to print the messages from the agents."""
-    print(f"{message.name}: {message.content}")
-
-
 async def main():
     """Main function to run the agents."""
     triage_agent = ChatCompletionAgent(
@@ -128,10 +122,9 @@ async def main():
             ]
         },
         input_transform=custom_input_transform,
-        agent_response_callback=agent_response_callback,
     )
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     orchestration_result = await handoff_orchestration.invoke(

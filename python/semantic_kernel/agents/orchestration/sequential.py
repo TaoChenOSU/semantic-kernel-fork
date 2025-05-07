@@ -4,11 +4,13 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 
-from autogen_core import AgentRuntime, CancellationToken, MessageContext, RoutedAgent, message_handler
-
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
+from semantic_kernel.agents.runtime.core.cancellation_token import CancellationToken
+from semantic_kernel.agents.runtime.core.core_runtime import CoreRuntime
+from semantic_kernel.agents.runtime.core.message_context import MessageContext
+from semantic_kernel.agents.runtime.core.routed_agent import RoutedAgent, message_handler
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
@@ -96,7 +98,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
     async def _start(
         self,
         task: DefaultTypeAlias,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
     ) -> None:
@@ -111,7 +113,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
     @override
     async def _prepare(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
@@ -121,7 +123,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
 
     async def _register_members(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
     ) -> None:
         """Register the members.
@@ -131,7 +133,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
         orchestration, where actors need to know its next actor type to send the message to.
 
         Args:
-            runtime (AgentRuntime): The agent runtime.
+            runtime (CoreRuntime): The agent runtime.
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
 
         Returns:
@@ -154,7 +156,7 @@ class SequentialOrchestration(OrchestrationBase[TIn, TOut]):
 
     async def _register_collection_actor(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:

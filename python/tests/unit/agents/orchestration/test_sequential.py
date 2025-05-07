@@ -4,10 +4,10 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
-from autogen_core import SingleThreadedAgentRuntime
 
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationResult
 from semantic_kernel.agents.orchestration.sequential import SequentialOrchestration
+from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from tests.unit.agents.orchestration.conftest import MockAgent, MockRuntime
 
@@ -39,7 +39,7 @@ async def test_invoke():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     try:
@@ -58,7 +58,7 @@ async def test_invoke_with_response_callback():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     responses: list[DefaultTypeAlias] = []
@@ -85,7 +85,7 @@ async def test_invoke_cancel_before_completion():
         agent_a = MockAgent()
         agent_b = MockAgent()
 
-        runtime = SingleThreadedAgentRuntime()
+        runtime = InProcessRuntime()
         runtime.start()
 
         try:
@@ -106,7 +106,7 @@ async def test_invoke_cancel_after_completion():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     try:
@@ -127,7 +127,7 @@ async def test_invoke_with_double_get_result():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
-    runtime = SingleThreadedAgentRuntime()
+    runtime = InProcessRuntime()
     runtime.start()
 
     try:

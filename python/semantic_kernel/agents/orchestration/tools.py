@@ -36,7 +36,7 @@ def structure_output_transform(
     settings = kernel.get_prompt_execution_settings_from_service_id(service.service_id)
     if prompt_execution_settings:
         settings.update_from_prompt_execution_settings(prompt_execution_settings)
-    if getattr(settings, "response_format", None) is None:
+    if not hasattr(settings, "response_format"):
         raise ValueError("The service must support structured output.")
     settings.response_format = target_structure
 
@@ -58,7 +58,7 @@ def structure_output_transform(
             raise ValueError(f"Output must be {DefaultTypeAlias}.")
 
         response = await service.get_chat_message_content(chat_history, settings)
-        assert response is not None
+        assert response is not None  # nosec B101
 
         return target_structure.model_validate_json(response.content)
 

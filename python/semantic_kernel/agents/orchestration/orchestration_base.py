@@ -10,11 +10,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Generic, Union, get_args
 
-from autogen_core import AgentRuntime, CancellationToken
 from pydantic import Field
 from typing_extensions import TypeVar
 
 from semantic_kernel.agents.agent import Agent
+from semantic_kernel.agents.runtime.core.cancellation_token import CancellationToken
+from semantic_kernel.agents.runtime.core.core_runtime import CoreRuntime
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.kernel_pydantic import KernelBaseModel
@@ -175,7 +176,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
     async def invoke(
         self,
         task: str | DefaultTypeAlias | TIn,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
     ) -> OrchestrationResult[TOut]:
         """Invoke the multi-agent orchestration and return the result.
 
@@ -184,7 +185,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
 
         Args:
             task (str, DefaultTypeAlias, TIn): The task to be executed by the agents.
-            runtime (AgentRuntime): The runtime environment for the agents.
+            runtime (CoreRuntime): The runtime environment for the agents.
         """
         self._set_types()
 
@@ -247,7 +248,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
     async def _start(
         self,
         task: DefaultTypeAlias,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         cancellation_token: CancellationToken,
     ) -> None:
@@ -255,7 +256,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
 
         Args:
             task (ChatMessageContent | list[ChatMessageContent]): The task to be executed by the agents.
-            runtime (AgentRuntime): The runtime environment for the agents.
+            runtime (CoreRuntime): The runtime environment for the agents.
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
             cancellation_token (CancellationToken): The cancellation token for the orchestration.
         """
@@ -264,14 +265,14 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
     @abstractmethod
     async def _prepare(
         self,
-        runtime: AgentRuntime,
+        runtime: CoreRuntime,
         internal_topic_type: str,
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]],
     ) -> None:
         """Register the actors and orchestrations with the runtime and add the required subscriptions.
 
         Args:
-            runtime (AgentRuntime): The runtime environment for the agents.
+            runtime (CoreRuntime): The runtime environment for the agents.
             internal_topic_type (str): The internal topic type for the orchestration that this actor is part of.
             external_topic_type (str | None): The external topic type for the orchestration.
             direct_actor_type (str | None): The direct actor type for which this actor will relay the output message to.
