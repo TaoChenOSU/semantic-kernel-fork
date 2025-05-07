@@ -44,7 +44,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class MagenticOneStartMessage(KernelBaseModel):
     """A message to start a magentic one group chat."""
 
-    body: DefaultTypeAlias
+    body: ChatMessageContent
 
 
 class MagenticOneRequestMessage(KernelBaseModel):
@@ -143,7 +143,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             self.prompt_execution_settings,
         )
-        assert facts is not None
+        assert facts is not None  # nosec B101
         chat_history.add_message(facts)
 
         # 2. Update the plan
@@ -165,7 +165,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             self.prompt_execution_settings,
         )
-        assert plan is not None
+        assert plan is not None  # nosec B101
 
         return facts, plan
 
@@ -242,7 +242,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             prompt_execution_settings_clone,
         )
-        assert response is not None
+        assert response is not None  # nosec B101
 
         return ProgressLedger.model_validate_json(response.content)
 
@@ -270,7 +270,7 @@ class MagenticOneManager(KernelBaseModel):
             chat_history,
             self.prompt_execution_settings,
         )
-        assert response is not None
+        assert response is not None  # nosec B101
 
         return response
 
@@ -312,11 +312,7 @@ class MagenticOneManagerActor(ActorBase):
     async def _handle_start_message(self, message: MagenticOneStartMessage, ctx: MessageContext) -> None:
         """Handle the start message for the Magentic One manager."""
         logger.debug(f"{self.id}: Received Magentic One start message.")
-        if isinstance(message.body, ChatMessageContent):
-            self._task = message.body
-        else:
-            raise ValueError(f"Invalid message body type: {type(message.body)}. Expected {ChatMessageContent}.")
-
+        self._task = message.body
         self._facts, self._plan = await self._manager.create_facts_and_plan(
             self._chat_history.model_copy(deep=True),
             self._task,
@@ -587,6 +583,9 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         too slow), it might send a request to the next agent before the other actors
         have the necessary context.
         """
+        if not isinstance(task, ChatMessageContent):
+            # Magentic One only supports ChatMessageContent as input.
+            raise ValueError("The task must be a ChatMessageContent object.")
 
         async def send_start_message(agent: Agent) -> None:
             target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))

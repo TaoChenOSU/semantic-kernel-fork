@@ -38,6 +38,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TOut]):
     """The result of an invocation of an orchestration."""
 
     value: TOut | None = None
+    exception: Exception | None = None
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
     cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
@@ -62,6 +63,8 @@ class OrchestrationResult(KernelBaseModel, Generic[TOut]):
         if self.value is None:
             if self.cancellation_token.is_cancelled():
                 raise RuntimeError("The invocation was canceled before it could complete.")
+            if self.exception is not None:
+                raise self.exception
             raise RuntimeError("The invocation did not produce a result.")
         return self.value
 
@@ -218,7 +221,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             else:
                 prepared_task = self._input_transform(task)  # type: ignore[arg-type]
 
-        asyncio.create_task(  # noqa: RUF006
+        background_task = asyncio.create_task(
             self._start(
                 prepared_task,
                 runtime,
@@ -226,6 +229,18 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
                 orchestration_result.cancellation_token,
             )
         )
+
+        # Add a callback to surface any exceptions that occur during the task execution.
+        def exception_callback(task: asyncio.Task) -> None:
+            nonlocal orchestration_result
+            try:
+                task.result()
+            except Exception as e:
+                orchestration_result.exception = e
+                orchestration_result.event.set()
+
+        background_task.add_done_callback(exception_callback)
+
         return orchestration_result
 
     @abstractmethod

@@ -23,56 +23,12 @@ from semantic_kernel.contents.function_result_content import FunctionResultConte
 from semantic_kernel.contents.streaming_chat_message_content import StreamingChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.kernel import Kernel
-from tests.unit.agents.orchestration.conftest import MockAgentThread, MockRuntime
+from tests.unit.agents.orchestration.conftest import MockAgent, MockAgentThread, MockRuntime
 
 if sys.version_info >= (3, 12):
     from typing import override  # pragma: no cover
 else:
     from typing_extensions import override  # pragma: no cover
-
-
-class MockAgent(Agent):
-    """A mock agent for testing purposes."""
-
-    @override
-    async def get_response(
-        self,
-        *,
-        messages: str | ChatMessageContent | list[str | ChatMessageContent] | None = None,
-        thread: AgentThread | None = None,
-        **kwargs,
-    ) -> AgentResponseItem[ChatMessageContent]:
-        # Simulate some processing time
-        await asyncio.sleep(0.1)
-        return AgentResponseItem[ChatMessageContent](
-            message=ChatMessageContent(
-                role=AuthorRole.ASSISTANT,
-                content="mock_response",
-            ),
-            thread=thread or MockAgentThread(),
-        )
-
-    @override
-    async def invoke(
-        self,
-        *,
-        messages: str | ChatMessageContent | list[str | ChatMessageContent] | None = None,
-        thread: AgentThread | None = None,
-        on_intermediate_message: Callable[[ChatMessageContent], Awaitable[None]] | None = None,
-        **kwargs,
-    ) -> AgentResponseItem[ChatMessageContent]:
-        pass
-
-    @override
-    async def invoke_stream(
-        self,
-        *,
-        messages: str | ChatMessageContent | list[str | ChatMessageContent] | None = None,
-        thread: AgentThread | None = None,
-        on_intermediate_message: Callable[[ChatMessageContent], Awaitable[None]] | None = None,
-        **kwargs,
-    ) -> AsyncIterable[AgentResponseItem[StreamingChatMessageContent]]:
-        pass
 
 
 class MockAgentWithHandoffFunctionCall(Agent):
