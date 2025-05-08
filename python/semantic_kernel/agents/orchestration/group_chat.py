@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import inspect
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -172,7 +173,7 @@ class GroupChatManager(KernelBaseModel, ABC):
     current_round: int = 0
     max_rounds: int | None = None
 
-    user_input_func: Callable[[ChatHistory], Awaitable[str]] | None = None
+    human_response_function: Callable[[], Awaitable[ChatMessageContent] | ChatMessageContent] | None = None
 
     @abstractmethod
     async def should_request_user_input(self, chat_history: ChatHistory) -> BoolWithReason:
@@ -335,17 +336,16 @@ class GroupChatManagerActor(ActorBase):
         should_request_user_input = await self._manager.should_request_user_input(
             self._chat_history.model_copy(deep=True)
         )
-        if should_request_user_input and self._manager.user_input_func:
+        if should_request_user_input and self._manager.human_response_function:
             logger.debug(f"Group chat manager requested user input. Reason: {should_request_user_input.reason}")
-            user_input = await self._manager.user_input_func(self._chat_history)
-            if user_input:
-                self._chat_history.add_message(ChatMessageContent(role=AuthorRole.USER, content=user_input))
-                await self.publish_message(
-                    GroupChatResponseMessage(body=ChatMessageContent(role=AuthorRole.USER, content=user_input)),
-                    TopicId(self._internal_topic_type, self.id.key),
-                    cancellation_token=cancellation_token,
-                )
-                logger.debug("User input received and added to chat history.")
+            user_input_message = await self._call_human_response_function()
+            self._chat_history.add_message(user_input_message)
+            await self.publish_message(
+                GroupChatResponseMessage(body=user_input_message),
+                TopicId(self._internal_topic_type, self.id.key),
+                cancellation_token=cancellation_token,
+            )
+            logger.debug("User input received and added to chat history.")
 
         # Determine if the group chat should terminate
         should_terminate = await self._manager.should_terminate(self._chat_history.model_copy(deep=True))
@@ -373,6 +373,13 @@ class GroupChatManagerActor(ActorBase):
             TopicId(self._internal_topic_type, self.id.key),
             cancellation_token=cancellation_token,
         )
+
+    async def _call_human_response_function(self) -> ChatMessageContent:
+        """Call the human response function if it is set."""
+        assert self._manager.human_response_function  # nosec B101
+        if inspect.iscoroutinefunction(self._manager.human_response_function):
+            return await self._manager.human_response_function(self._chat_history.model_copy(deep=True))
+        return self._manager.human_response_function(self._chat_history.model_copy(deep=True))  # type: ignore[return-value]
 
 
 # endregion GroupChatManagerActor

@@ -39,7 +39,7 @@ class OrchestrationResult(KernelBaseModel, Generic[TOut]):
     """The result of an invocation of an orchestration."""
 
     value: TOut | None = None
-    exception: Exception | None = None
+    exception: BaseException | None = None
     event: asyncio.Event = Field(default_factory=lambda: asyncio.Event())
     cancellation_token: CancellationToken = Field(default_factory=lambda: CancellationToken())
 
@@ -178,10 +178,10 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         task: str | DefaultTypeAlias | TIn,
         runtime: CoreRuntime,
     ) -> OrchestrationResult[TOut]:
-        """Invoke the multi-agent orchestration and return the result.
+        """Invoke the multi-agent orchestration.
 
-        This method is a blocking call that waits for the orchestration to finish
-        and returns the result.
+        This method is non-blocking and will return immediately.
+        To wait for the result, use the `get` method of the `OrchestrationResult` object.
 
         Args:
             task (str, DefaultTypeAlias, TIn): The task to be executed by the agents.
@@ -236,7 +236,7 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
             nonlocal orchestration_result
             try:
                 task.result()
-            except Exception as e:
+            except BaseException as e:
                 orchestration_result.exception = e
                 orchestration_result.event.set()
 
