@@ -2,6 +2,7 @@
 
 import asyncio
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.group_chat import GroupChatOrchestration, RoundRobinGroupChatManager
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
@@ -12,7 +13,10 @@ from semantic_kernel.contents.chat_message_content import ChatMessageContent
 The following sample demonstrates how to create a group chat orchestration with a default
 round robin manager for controlling the flow of conversation in a round robin fashion.
 
-Think of the group chat manage as a state machine. 
+Think of the group chat manager as a state machine, with the following possible states:
+- Request for user message
+- Termination, after which the manager will try to filter a result from the conversation
+- Continuation, at which the manager will select the next agent to speak
 
 This sample demonstrates the basic steps of creating and starting a runtime, creating
 a group chat orchestration with a group chat manager, invoking the orchestration,
@@ -23,7 +27,7 @@ to refine a slogan for a new electric SUV.
 """
 
 
-def agents() -> list[ChatCompletionAgent]:
+def agents() -> list[Agent]:
     """Return a list of agents that will participate in the group style discussion.
 
     Feel free to add or remove agents.

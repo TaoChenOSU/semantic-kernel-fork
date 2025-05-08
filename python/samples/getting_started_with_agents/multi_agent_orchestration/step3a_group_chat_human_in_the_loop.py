@@ -3,6 +3,7 @@
 import asyncio
 import sys
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.group_chat import (
     BoolWithReason,
@@ -25,19 +26,21 @@ The following sample demonstrates how to create a group chat orchestration with 
 in the loop. Human in the loop is achieved by overriding the default round robin manager
 to allow user input after the reviewer agent's message.
 
-Human in the loop is useful when you want to have a human participant in the group chat
-orchestration. Human in the loop can be supported by all group chat managers. 
+Think of the group chat manager as a state machine, with the following possible states:
+- Request for user message
+- Termination, after which the manager will try to filter a result from the conversation
+- Continuation, at which the manager will select the next agent to speak
 
-This sample demonstrates the basic steps of creating and starting a runtime, creating
-a group chat orchestration with a group chat manager, invoking the orchestration,
-and finally waiting for the results.
+This sample demonstrates the basic steps of customizing the group chat manager to enter
+the user input state, creating a human response function to get user input, and providing
+it to the group chat manager.
 
 There are two agents in this orchestration: a writer and a reviewer. They work iteratively
 to refine a slogan for a new electric SUV.
 """
 
 
-def agents() -> list[ChatCompletionAgent]:
+def agents() -> list[Agent]:
     """Return a list of agents that will participate in the group style discussion.
 
     Feel free to add or remove agents.
@@ -64,10 +67,7 @@ def agents() -> list[ChatCompletionAgent]:
 
 
 class CustomRoundRobinGroupChatManager(RoundRobinGroupChatManager):
-    """Custom round robin group chat manager to enable user input.
-
-    The default round robin manager does not allow user input.
-    """
+    """Custom round robin group chat manager to enable user input."""
 
     @override
     async def should_request_user_input(self, chat_history: ChatHistory) -> BoolWithReason:

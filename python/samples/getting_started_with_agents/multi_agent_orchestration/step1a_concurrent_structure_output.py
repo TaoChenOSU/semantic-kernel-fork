@@ -3,6 +3,7 @@
 import asyncio
 import os
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.concurrent import ConcurrentOrchestration
 from semantic_kernel.agents.orchestration.tools import structure_output_transform
@@ -28,7 +29,7 @@ class ArticleAnalysis(KernelBaseModel):
     entities: list[str]
 
 
-def agents() -> list[ChatCompletionAgent]:
+def agents() -> list[Agent]:
     """Return a list of agents that will participate in the concurrent orchestration.
 
     Feel free to add or remove agents.
@@ -59,6 +60,8 @@ async def main():
     """Main function to run the agents."""
     # 1. Create a concurrent orchestration with multiple agents
     #    and a structure output transform.
+    # To enable structured output, you must specify the output transform
+    #   and the generic types for the orchestration.
     # Note: the chat completion service and model provided to the
     #    structure output transform must support structured output.
     concurrent_orchestration = ConcurrentOrchestration[str, ArticleAnalysis](

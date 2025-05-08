@@ -2,6 +2,7 @@
 
 import asyncio
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
@@ -9,6 +10,23 @@ from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion impo
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
+
+"""
+The following sample demonstrates how to create a handoff orchestration that represents
+a customer support triage system. The orchestration consists of 4 agents, each specialized
+in a different area of customer support: triage, refunds, order status, and order returns.
+
+Depending on the customer's request, agents can hand off the conversation to the appropriate
+agent.
+
+Human in the loop is achieved via a callback function similar to the one used in group chat
+orchestration. Except that in the handoff orchestration, all agents have access to the
+human response function, whereas in the group chat orchestration, only the manager has access
+to the human response function.
+
+This sample demonstrates the basic steps of creating and starting a runtime, creating
+a handoff orchestration, invoking the orchestration, and finally waiting for the results.
+"""
 
 
 class OrderStatusPlugin:
@@ -37,19 +55,11 @@ class OrderReturnPlugin:
         return f"Return for order {order_id} has been processed successfully."
 
 
-def agent_response_callback(message: ChatMessageContent) -> None:
-    """Observer function to print the messages from the agents."""
-    print(f"{message.name}: {message.content}")
+def agents() -> tuple[list[Agent], dict[str, list[HandoffConnection]]]:
+    """Return a list of agents that will participate in the Handoff orchestration and the handoff relationships.
 
-
-def human_response_function() -> ChatMessageContent:
-    """Observer function to print the messages from the agents."""
-    user_input = input("User: ")
-    return ChatMessageContent(role=AuthorRole.USER, content=user_input)
-
-
-async def main():
-    """Main function to run the agents."""
+    Feel free to add or remove agents and handoff connections.
+    """
     support_agent = ChatCompletionAgent(
         name="TriageAgent",
         description="A customer support agent that triages issues.",
@@ -116,30 +126,69 @@ async def main():
         ],
     }
 
+    return [support_agent, refund_agent, order_status_agent, order_return_agent], handoffs
+
+
+def agent_response_callback(message: ChatMessageContent) -> None:
+    """Observer function to print the messages from the agents."""
+    print(f"{message.name}: {message.content}")
+
+
+def human_response_function() -> ChatMessageContent:
+    """Observer function to print the messages from the agents."""
+    user_input = input("User: ")
+    return ChatMessageContent(role=AuthorRole.USER, content=user_input)
+
+
+async def main():
+    """Main function to run the agents."""
+    # 1. Create a handoff orchestration with multiple agents
+    agents_list, handoffs = agents()
     handoff_orchestration = HandoffOrchestration(
-        members=[
-            support_agent,
-            refund_agent,
-            order_status_agent,
-            order_return_agent,
-        ],
+        members=agents_list,
         handoffs=handoffs,
         agent_response_callback=agent_response_callback,
         human_response_function=human_response_function,
     )
 
+    # 2. Create a runtime and start it
     runtime = InProcessRuntime()
     runtime.start()
 
+    # 3. Invoke the orchestration with a task and the runtime
     orchestration_result = await handoff_orchestration.invoke(
         task="A customer is on the line.",
         runtime=runtime,
     )
 
+    # 4. Wait for the results
     value = await orchestration_result.get()
     print(value)
 
+    # 5. Stop the runtime after the invocation is complete
     await runtime.stop_when_idle()
+
+    """
+    Sample output:
+    TriageAgent: Hello! Thank you for reaching out. How can I assist you today?
+    User: I'd like to track the status of my order
+    OrderStatusAgent: Sure, I can help you with that. Could you please provide me with your order ID?
+    User: My order ID is 123
+    OrderStatusAgent: Your order with ID 123 has been shipped and is expected to arrive in 2-3 days. Is there anything
+        else I can assist you with?
+    User: I want to return another order of mine
+    OrderReturnAgent: I can help you with returning your order. Could you please provide the order ID for the return
+        and the reason you'd like to return it?
+    User: Order ID 321
+    OrderReturnAgent: Please provide the reason for returning the order with ID 321.
+    User: Broken item
+    Processing return for order 321 due to: Broken item
+    OrderReturnAgent: The return for your order with ID 321 has been successfully processed due to the broken item.
+        Is there anything else I can assist you with?
+    User: No, bye
+    Task is completed with summary: Handled order return for order ID 321 due to a broken item, and successfully
+        processed the return.
+    """
 
 
 if __name__ == "__main__":

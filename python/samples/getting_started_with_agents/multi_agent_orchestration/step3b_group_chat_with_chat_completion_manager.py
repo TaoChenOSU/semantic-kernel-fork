@@ -3,6 +3,7 @@
 import asyncio
 import sys
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.group_chat import (
     BoolWithReason,
@@ -30,16 +31,18 @@ else:
 
 
 """
-The following sample demonstrates how to create a group chat orchestration with a chat
-completion group chat manager.
+The following sample demonstrates how to create a group chat orchestration with a
+group chat manager that uses a chat completion service to control the flow of the
+conversation.
 
-This sample demonstrates the basic steps of creating and starting a runtime, creating
-a group chat orchestration with a group chat manager, invoking the orchestration,
-and finally waiting for the results.
+This sample creates a group of agents that represent different perspectives and put
+them in a group chat to discuss a topic. The group chat manager is responsible for
+controlling the flow of the conversation, selecting the next agent to speak, and
+filtering the results of the conversation, which is a summary of the discussion.
 """
 
 
-def agents() -> list[ChatCompletionAgent]:
+def agents() -> list[Agent]:
     """Return a list of agents that will participate in the group style discussion.
 
     Feel free to add or remove agents.
@@ -300,30 +303,72 @@ def agent_response_callback(message: ChatMessageContent) -> None:
 
 async def main():
     """Main function to run the agents."""
-    topic = "What does a good life mean to you personally?"
-
+    # 1. Create a group chat orchestration with the custom group chat manager
     group_chat_orchestration = GroupChatOrchestration(
         members=agents(),
         manager=ChatCompletionGroupChatManager(
-            topic=topic,
+            topic="What does a good life mean to you personally?",
             service=OpenAIChatCompletion(),
             max_rounds=10,
         ),
         agent_response_callback=agent_response_callback,
     )
 
+    # 2. Create a runtime and start it
     runtime = InProcessRuntime()
     runtime.start()
 
+    # 3. Invoke the orchestration with a task and the runtime
     orchestration_result = await group_chat_orchestration.invoke(
         task="Please start the discussion.",
         runtime=runtime,
     )
 
+    # 4. Wait for the results
     value = await orchestration_result.get()
     print(value)
 
+    # 5. Stop the runtime after the invocation is complete
     await runtime.stop_when_idle()
+
+    """
+    Sample output:
+    *********************
+    Should terminate: False
+    Reason: The discussion on what a good life means personally has not begun, meaning participants have not yet...
+    *********************
+    *********************
+    Next participant: Farmer
+    Reason: The Farmer from Southeast Asia can provide a perspective that highlights the importance of a connection...
+    *********************
+    **Farmer**
+    Thank you for the opportunity to share my perspective. As a farmer from Southeast Asia, my life is intricately...
+    *********************
+    Should terminate: False
+    Reason: The discussion has just started and only one perspective has been shared. There is room for further...
+    *********************
+    *********************
+    Next participant: Developer
+    Reason: To provide a contrast between rural and urban perspectives on what constitutes a good life, following the...
+    *********************
+    **Developer**
+    Thank you for the opportunity to join the discussion. As a software developer living in a technology-driven...
+    *********************
+    Should terminate: False
+    Reason: The discussion has just started with perspectives from both a farmer and a developer regarding the...
+    *********************
+    *********************
+    Next participant: Teacher
+    Reason: The Teacher, with their extensive experience and historical perspective, can provide valuable insights...
+    *********************
+    **Teacher**
+    As a retired history teacher from Eastern Europe, I find it fascinating to explore how the threads of history,...
+    *********************
+    Should terminate: True
+    Reason: The participants, representing diverse perspectives—a farmer, a developer, and a teacher—have each shared...
+    *********************
+    Our discussion on what constitutes a good life revolved around key perspectives from a farmer, a developer, and a...
+    """
 
 
 if __name__ == "__main__":

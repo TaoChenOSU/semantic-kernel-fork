@@ -2,6 +2,7 @@
 
 import asyncio
 
+from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.orchestration.sequential import SequentialOrchestration
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
@@ -19,8 +20,8 @@ results.
 """
 
 
-def agents() -> list[ChatCompletionAgent]:
-    """Return a list of agents that will participate in the concurrent orchestration.
+def agents() -> list[Agent]:
+    """Return a list of agents that will participate in the sequential orchestration.
 
     Feel free to add or remove agents.
     """
