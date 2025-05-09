@@ -106,13 +106,10 @@ def test_orchestration_init_with_default_values():
     assert orchestration._agent_response_callback is None
 
 
-def test_orchestration_init_with_less_than_two_members():
-    """Test the initialization of the OrchestrationBase with less than two members."""
+def test_orchestration_init_with_no_members():
+    """Test the initialization of the OrchestrationBase with no members."""
     with pytest.raises(ValueError):
         _ = MockOrchestration(members=[])
-
-    with pytest.raises(ValueError):
-        _ = MockOrchestration(members=[MockAgent()])
 
 
 def test_orchestration_set_types():

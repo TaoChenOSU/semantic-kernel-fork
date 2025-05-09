@@ -197,7 +197,7 @@ def test_round_robin_group_chat_manager_init():
     assert manager.max_rounds is None
     assert manager.current_round == 0
     assert manager.current_index == 0
-    assert manager.user_input_func is None
+    assert manager.human_response_function is None
 
 
 def test_round_robin_group_chat_manager_init_with_max_rounds():
@@ -206,22 +206,22 @@ def test_round_robin_group_chat_manager_init_with_max_rounds():
     assert manager.max_rounds == 5
     assert manager.current_round == 0
     assert manager.current_index == 0
-    assert manager.user_input_func is None
+    assert manager.human_response_function is None
 
 
-def test_round_robin_group_chat_manager_init_with_user_input_func():
-    """Test the initialization of the RoundRobinGroupChatManager with user_input_func."""
+def test_round_robin_group_chat_manager_init_with_human_response_function():
+    """Test the initialization of the RoundRobinGroupChatManager with human_response_function."""
 
-    async def user_input_func(chat_history: ChatHistory) -> str:
+    async def human_response_function(chat_history: ChatHistory) -> str:
         # Simulate user input
         await asyncio.sleep(0.1)
         return "user_input"
 
-    manager = RoundRobinGroupChatManager(user_input_func=user_input_func)
+    manager = RoundRobinGroupChatManager(human_response_function=human_response_function)
     assert manager.max_rounds is None
     assert manager.current_round == 0
     assert manager.current_index == 0
-    assert manager.user_input_func == user_input_func
+    assert manager.human_response_function == human_response_function
 
 
 async def test_round_robin_group_chat_manager_should_terminate():

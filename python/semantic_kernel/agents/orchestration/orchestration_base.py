@@ -4,7 +4,6 @@ import asyncio
 import inspect
 import json
 import logging
-import sys
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
@@ -19,12 +18,6 @@ from semantic_kernel.agents.runtime.core.core_runtime import CoreRuntime
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.kernel_pydantic import KernelBaseModel
-
-if sys.version_info >= (3, 12):
-    pass  # pragma: no cover
-else:
-    pass  # pragma: no cover
-
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -112,8 +105,6 @@ class OrchestrationBase(ABC, Generic[TIn, TOut]):
         """
         if not members:
             raise ValueError("The members list cannot be empty.")
-        if len(members) < 2:
-            raise ValueError("The members list must contain at least two agents.")
         self._members = members
 
         self.name = name or f"{self.__class__.__name__}_{uuid.uuid4().hex}"
