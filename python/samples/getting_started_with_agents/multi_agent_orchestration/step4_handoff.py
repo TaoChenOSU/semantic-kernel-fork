@@ -4,7 +4,7 @@ import asyncio
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
-from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
+from semantic_kernel.agents.orchestration.handoffs import HandoffOrchestration, OrchestrationHandoffs
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
@@ -55,7 +55,7 @@ class OrderReturnPlugin:
         return f"Return for order {order_id} has been processed successfully."
 
 
-def agents() -> tuple[list[Agent], dict[str, list[HandoffConnection]]]:
+def agents() -> tuple[list[Agent], OrchestrationHandoffs]:
     """Return a list of agents that will participate in the Handoff orchestration and the handoff relationships.
 
     Feel free to add or remove agents and handoff connections.
@@ -91,40 +91,33 @@ def agents() -> tuple[list[Agent], dict[str, list[HandoffConnection]]]:
         plugins=[OrderReturnPlugin()],
     )
 
-    handoffs: dict[str, list[HandoffConnection]] = {
-        support_agent.name: [
-            HandoffConnection(
-                agent_name=refund_agent.name,
-                description="Transfer to this agent if the issue is refund related",
-            ),
-            HandoffConnection(
-                agent_name=order_status_agent.name,
-                description="Transfer to this agent if the issue is order status related",
-            ),
-            HandoffConnection(
-                agent_name=order_return_agent.name,
-                description="Transfer to this agent if the issue is order return related",
-            ),
-        ],
-        refund_agent.name: [
-            HandoffConnection(
-                agent_name=support_agent.name,
-                description="Transfer to this agent if the issue is not refund related",
-            )
-        ],
-        order_status_agent.name: [
-            HandoffConnection(
-                agent_name=support_agent.name,
-                description="Transfer to this agent if the issue is not order status related",
-            )
-        ],
-        order_return_agent.name: [
-            HandoffConnection(
-                agent_name=support_agent.name,
-                description="Transfer to this agent if the issue is not order return related",
-            )
-        ],
-    }
+    # Define the handoff relationships between agents
+    handoffs = (
+        OrchestrationHandoffs()
+        .add_many(
+            support_agent.name,
+            {
+                refund_agent.name: "Transfer to this agent if the issue is refund related",
+                order_status_agent.name: "Transfer to this agent if the issue is order status related",
+                order_return_agent.name: "Transfer to this agent if the issue is order return related",
+            },
+        )
+        .add(
+            refund_agent.name,
+            support_agent.name,
+            "Transfer to this agent if the issue is not refund related",
+        )
+        .add(
+            order_status_agent.name,
+            support_agent.name,
+            "Transfer to this agent if the issue is not order status related",
+        )
+        .add(
+            order_return_agent.name,
+            support_agent.name,
+            "Transfer to this agent if the issue is not order return related",
+        )
+    )
 
     return [support_agent, refund_agent, order_status_agent, order_return_agent], handoffs
 

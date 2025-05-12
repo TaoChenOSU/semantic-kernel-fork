@@ -5,7 +5,7 @@ from enum import Enum
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
-from semantic_kernel.agents.orchestration.handoffs import HandoffConnection, HandoffOrchestration
+from semantic_kernel.agents.orchestration.handoffs import HandoffOrchestration, OrchestrationHandoffs
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion import OpenAIChatCompletion
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
@@ -71,7 +71,7 @@ class GithubPlugin:
         print(f"Creating plan for issue {issue_id} with tasks:\n{plan.model_dump_json(indent=2)}")
 
 
-def agents() -> tuple[list[Agent], dict[str, list[HandoffConnection]]]:
+def agents() -> tuple[list[Agent], OrchestrationHandoffs]:
     """Return a list of agents that will participate in the Handoff orchestration and the handoff relationships.
 
     Feel free to add or remove agents and handoff connections.
@@ -97,17 +97,12 @@ def agents() -> tuple[list[Agent], dict[str, list[HandoffConnection]]]:
         plugins=[GithubPlugin()],
     )
 
+    # Define the handoff relationships between agents
     handoffs = {
-        triage_agent.name: [
-            HandoffConnection(
-                agent_name=python_agent.name,
-                description="Transfer to this agent if the issue is Python related",
-            ),
-            HandoffConnection(
-                agent_name=dotnet_agent.name,
-                description="Transfer to this agent if the issue is .NET related",
-            ),
-        ]
+        triage_agent.name: {
+            python_agent.name: "Transfer to this agent if the issue is Python related",
+            dotnet_agent.name: "Transfer to this agent if the issue is .NET related",
+        },
     }
 
     return [triage_agent, python_agent, dotnet_agent], handoffs
