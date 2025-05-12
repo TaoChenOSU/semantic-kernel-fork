@@ -11,8 +11,8 @@ from semantic_kernel.agents.agent import Agent, AgentResponseItem, AgentThread
 from semantic_kernel.agents.orchestration.handoffs import (
     HANDOFF_PLUGIN_NAME,
     HandoffAgentActor,
-    HandoffConnection,
     HandoffOrchestration,
+    OrchestrationHandoffs,
 )
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
@@ -115,24 +115,23 @@ def test_init_with_invalid_handoff():
     agent_a = MockAgent()
     agent_b = MockAgent()
 
+    # Invalid handoff agent name
     with pytest.raises(ValueError):
         HandoffOrchestration(
             members=[agent_a, agent_b],
             handoffs={
-                agent_a.name: [
-                    HandoffConnection(agent_name=agent_b.name, description="test"),
-                    HandoffConnection(agent_name="invalid_agent_name", description="test"),
-                ],
-                agent_b.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
+                agent_a.name: {agent_b.name: "test", "invalid_agent_name": "test"},
+                agent_b.name: {agent_a.name: "test"},
             },
         )
 
+    # Invalid handoff agent name (not in members)
     with pytest.raises(ValueError):
         HandoffOrchestration(
             members=[agent_a, agent_b],
             handoffs={
-                "invalid_agent_name": [HandoffConnection(agent_name=agent_b.name, description="test")],
-                agent_b.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
+                "invalid_agent_name": {agent_b.name: "test"},
+                agent_b.name: {agent_a.name: "test"},
             },
         )
 
@@ -141,10 +140,118 @@ def test_init_with_invalid_handoff():
         HandoffOrchestration(
             members=[agent_a, agent_b],
             handoffs={
-                agent_a.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
-                agent_b.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
+                agent_a.name: {agent_a.name: "test"},
+                agent_b.name: {agent_a.name: "test"},
             },
         )
+
+
+def test_init_with_duplicate_handoffs():
+    """Test the initialization of HandoffOrchestration with duplicate handoffs."""
+    agent_a = MockAgent()
+    agent_b = MockAgent()
+
+    # Uniqueness guarantee
+    orchestration = HandoffOrchestration(
+        members=[agent_a, agent_b],
+        handoffs={
+            agent_a.name: {agent_b.name: "test 1", agent_b.name: "test 2"},
+        },
+    )
+
+    assert len(orchestration._handoffs[agent_a.name]) == 1
+
+
+def test_init_with_dictionary_handoffs():
+    """Test the initialization of HandoffOrchestration with dictionary handoffs."""
+    agent_a = MockAgent()
+    agent_b = MockAgent()
+
+    orchestration_handoffs = OrchestrationHandoffs(
+        {
+            agent_a.name: {agent_b.name: "test 1"},
+            agent_b.name: {agent_a.name: "test 2"},
+        },
+    )
+
+    assert len(orchestration_handoffs) == 2
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name == agent_b.name
+        assert handoff_description == "test 1"
+
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_b.name].items():
+        assert handoff_agent_name == agent_a.name
+        assert handoff_description == "test 2"
+
+
+def test_orchestration_handoff_add():
+    """Test the add method of the OrchestrationHandoffs."""
+    agent_a = MockAgent()
+    agent_b = MockAgent()
+
+    orchestration_handoffs = OrchestrationHandoffs().add(agent_a, agent_b).add(agent_b, agent_a)
+
+    assert isinstance(orchestration_handoffs, OrchestrationHandoffs)
+    assert len(orchestration_handoffs) == 2
+    assert len(orchestration_handoffs[agent_a.name]) == 1
+    assert len(orchestration_handoffs[agent_b.name]) == 1
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name == agent_b.name
+        assert handoff_description == ""
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_b.name].items():
+        assert handoff_agent_name == agent_a.name
+        assert handoff_description == ""
+
+
+def test_orchestration_handoff_add_many():
+    """Test the add_many method of the OrchestrationHandoffs."""
+    agent_a = MockAgent(description="agent_a")
+    agent_b = MockAgent(description="agent_b")
+    agent_c = MockAgent(description="agent_c")
+
+    # Case 1: Agent instance as source and dictionary as handoffs
+    orchestration_handoffs = OrchestrationHandoffs().add_many(
+        agent_a,
+        {agent_b.name: "test 1", agent_c.name: "test 2"},
+    )
+
+    assert isinstance(orchestration_handoffs, OrchestrationHandoffs)
+    assert len(orchestration_handoffs) == 1
+    assert len(orchestration_handoffs[agent_a.name]) == 2
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name in [agent_b.name, agent_c.name]
+        assert handoff_description in ["test 1", "test 2"]
+
+    # Case 2: Agent name as source and list of agents as handoffs
+    orchestration_handoffs = OrchestrationHandoffs().add_many(
+        agent_a.name,
+        {agent_b.name: "test 1", agent_c.name: "test 2"},
+    )
+
+    assert isinstance(orchestration_handoffs, OrchestrationHandoffs)
+    assert len(orchestration_handoffs) == 1
+    assert len(orchestration_handoffs[agent_a.name]) == 2
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name in [agent_b.name, agent_c.name]
+        assert handoff_description in ["test 1", "test 2"]
+
+    # Case 3: Agent instance as source and list of agents as handoffs
+    orchestration_handoffs = OrchestrationHandoffs().add_many(agent_a, [agent_b, agent_c])
+    assert isinstance(orchestration_handoffs, OrchestrationHandoffs)
+    assert len(orchestration_handoffs) == 1
+    assert len(orchestration_handoffs[agent_a.name]) == 2
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name in [agent_b.name, agent_c.name]
+        assert handoff_description in [agent_b.description, agent_c.description]
+
+    # Case 4: Agent name as source and list of agent names as handoffs
+    orchestration_handoffs = OrchestrationHandoffs().add_many(agent_a.name, [agent_b.name, agent_c.name])
+    assert isinstance(orchestration_handoffs, OrchestrationHandoffs)
+    assert len(orchestration_handoffs) == 1
+    assert len(orchestration_handoffs[agent_a.name]) == 2
+    for handoff_agent_name, handoff_description in orchestration_handoffs[agent_a.name].items():
+        assert handoff_agent_name in [agent_b.name, agent_c.name]
+        assert handoff_description == ""
 
 
 async def test_prepare():
@@ -164,9 +271,9 @@ async def test_prepare():
         orchestration = HandoffOrchestration(
             members=[agent_a, agent_b, agent_c],
             handoffs={
-                agent_a.name: [HandoffConnection(agent_name=agent_b.name, description="test")],
-                agent_b.name: [HandoffConnection(agent_name=agent_c.name, description="test")],
-                agent_c.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
+                agent_a.name: {agent_b.name: "test"},
+                agent_b.name: {agent_c.name: "test"},
+                agent_c.name: {agent_a.name: "test"},
             },
         )
         await orchestration.invoke(task="test_message", runtime=runtime)
@@ -192,20 +299,14 @@ async def test_invoke():
             orchestration = HandoffOrchestration(
                 members=[agent_a, agent_b, agent_c],
                 handoffs={
-                    agent_a.name: [
-                        HandoffConnection(agent_name=agent_b.name, description="test"),
-                        HandoffConnection(agent_name=agent_c.name, description="test"),
-                    ],
-                    agent_b.name: [HandoffConnection(agent_name=agent_a.name, description="test")],
+                    agent_a.name: {agent_b.name: "test", agent_c.name: "test"},
+                    agent_b.name: {agent_a.name: "test"},
                 },
             )
             orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
             await orchestration_result.get()
 
-            assert mock_init.call_args_list[0][0][3] == [
-                HandoffConnection(agent_name=agent_b.name, description="test"),
-                HandoffConnection(agent_name=agent_c.name, description="test"),
-            ]
+            assert mock_init.call_args_list[0][0][3] == {agent_b.name: "test", agent_c.name: "test"}
             assert isinstance(mock_get_response.call_args_list[0][1]["kernel"], Kernel)
             kernel = mock_get_response.call_args_list[0][1]["kernel"]
             assert HANDOFF_PLUGIN_NAME in kernel.plugins
@@ -235,11 +336,7 @@ async def test_invoke_with_list():
         try:
             orchestration = HandoffOrchestration(
                 members=[agent_a, agent_b],
-                handoffs={
-                    agent_a.name: [
-                        HandoffConnection(agent_name=agent_b.name, description="test"),
-                    ],
-                },
+                handoffs={agent_a.name: {agent_b.name: "test"}},
             )
             orchestration_result = await orchestration.invoke(task=messages, runtime=runtime)
             await orchestration_result.get()
@@ -263,11 +360,7 @@ async def test_invoke_with_response_callback():
     try:
         orchestration = HandoffOrchestration(
             members=[agent_a, agent_b],
-            handoffs={
-                agent_a.name: [
-                    HandoffConnection(agent_name=agent_b.name, description="test"),
-                ],
-            },
+            handoffs={agent_a.name: {agent_b.name: "test"}},
             agent_response_callback=lambda x: responses.append(x),
         )
         orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
@@ -296,11 +389,7 @@ async def test_invoke_with_handoff_function_call():
         try:
             orchestration = HandoffOrchestration(
                 members=[agent_a, agent_b],
-                handoffs={
-                    agent_a.name: [
-                        HandoffConnection(agent_name=agent_b.name, description="test"),
-                    ],
-                },
+                handoffs={agent_a.name: {agent_b.name: "test"}},
             )
             orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
             await orchestration_result.get()
@@ -325,11 +414,7 @@ async def test_invoke_cancel_before_completion():
         try:
             orchestration = HandoffOrchestration(
                 members=[agent_a, agent_b],
-                handoffs={
-                    agent_a.name: [
-                        HandoffConnection(agent_name=agent_b.name, description="test"),
-                    ],
-                },
+                handoffs={agent_a.name: {agent_b.name: "test"}},
             )
             orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
 
@@ -353,11 +438,7 @@ async def test_invoke_cancel_after_completion():
     try:
         orchestration = HandoffOrchestration(
             members=[agent_a, agent_b],
-            handoffs={
-                agent_a.name: [
-                    HandoffConnection(agent_name=agent_b.name, description="test"),
-                ],
-            },
+            handoffs={agent_a.name: {agent_b.name: "test"}},
         )
 
         orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
@@ -369,3 +450,6 @@ async def test_invoke_cancel_after_completion():
             orchestration_result.cancel()
     finally:
         await runtime.stop_when_idle()
+
+
+# endregion

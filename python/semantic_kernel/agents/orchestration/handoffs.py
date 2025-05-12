@@ -7,6 +7,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 from functools import partial
+from typing import Self
 
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import AgentActorBase
@@ -41,11 +42,47 @@ logger: logging.Logger = logging.getLogger(__name__)
 # region Messages and Types
 
 
-class HandoffConnection(KernelBaseModel):
-    """A model representing a handoff connection."""
+# A type alias for a mapping of agent names to their descriptions
+# of the possible handoff connections for an agent.
+AgentHandoffs = dict[str, str]
 
-    agent_name: str
-    description: str
+
+class OrchestrationHandoffs(dict[str, AgentHandoffs]):
+    """A model representing the possible handoff connections for an orchestration."""
+
+    def add(self, source_agent: str | Agent, target_agent: str | Agent, description: str | None = None) -> "Self":
+        """Add a handoff connection to the orchestration."""
+        return self._add(
+            source_agent=source_agent if isinstance(source_agent, str) else source_agent.name,
+            target_agent=target_agent if isinstance(target_agent, str) else target_agent.name,
+            description=description or target_agent.description or "" if isinstance(target_agent, Agent) else "",
+        )
+
+    def add_many(self, source_agent: str | Agent, target_agents: list[str | Agent] | AgentHandoffs) -> "Self":
+        """Add multiple handoff connections to the orchestration."""
+        if isinstance(target_agents, list):
+            for target_agent in target_agents:
+                self._add(
+                    source_agent=source_agent if isinstance(source_agent, str) else source_agent.name,
+                    target_agent=target_agent if isinstance(target_agent, str) else target_agent.name,
+                    description=target_agent.description or "" if isinstance(target_agent, Agent) else "",
+                )
+        elif isinstance(target_agents, dict):
+            for target_agent_name, description in target_agents.items():
+                self._add(
+                    source_agent=source_agent if isinstance(source_agent, str) else source_agent.name,
+                    target_agent=target_agent_name,
+                    description=description,
+                )
+        return self
+
+    def _add(self, source_agent: str, target_agent: str, description: str) -> "Self":
+        """Helper method to add a handoff connection."""
+        if source_agent not in self:
+            self[source_agent] = AgentHandoffs()
+        self[source_agent][target_agent] = description or ""
+
+        return self
 
 
 class HandoffStartMessage(KernelBaseModel):
@@ -81,13 +118,13 @@ class HandoffAgentActor(AgentActorBase):
         self,
         agent: Agent,
         internal_topic_type: str,
-        handoff_topic_connections: list[HandoffConnection],
+        handoff_connections: AgentHandoffs,
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
         agent_response_callback: Callable[[DefaultTypeAlias], Awaitable[None] | None] | None = None,
         human_response_function: Callable[[], Awaitable[ChatMessageContent] | ChatMessageContent] | None = None,
     ) -> None:
         """Initialize the handoff agent actor."""
-        self._handoff_topic_connections = handoff_topic_connections
+        self._handoff_connections = handoff_connections
         self._result_callback = result_callback
 
         self._kernel = agent.kernel.model_copy()
@@ -106,9 +143,9 @@ class HandoffAgentActor(AgentActorBase):
     def _add_handoff_functions(self) -> None:
         """Add handoff functions to the agent's kernel."""
         functions: list[KernelFunctionFromMethod] = []
-        for connection in self._handoff_topic_connections:
-            function_name = f"transfer_to_{connection.agent_name}"
-            function_description = connection.description
+        for handoff_agent_name, handoff_description in self._handoff_connections.items():
+            function_name = f"transfer_to_{handoff_agent_name}"
+            function_description = handoff_description
             return_parameter = KernelParameterMetadata(
                 name="return",
                 description="",
@@ -130,7 +167,7 @@ class HandoffAgentActor(AgentActorBase):
             functions.append(
                 KernelFunctionFromMethod.model_construct(
                     metadata=function_metadata,
-                    method=partial(self._handoff_to_agent, connection.agent_name),
+                    method=partial(self._handoff_to_agent, handoff_agent_name),
                 )
             )
         functions.append(KernelFunctionFromMethod(self._complete_task, plugin_name=HANDOFF_PLUGIN_NAME))
@@ -280,7 +317,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
     def __init__(
         self,
         members: list[Agent],
-        handoffs: dict[str, list[HandoffConnection]],
+        handoffs: OrchestrationHandoffs,
         name: str | None = None,
         description: str | None = None,
         input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
@@ -293,8 +330,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         Args:
             members (list[Agent]): A list of agents or orchestrations that are part of the
                 handoff group. This first agent in the list will be the one that receives the first message.
-            handoffs (dict[str, list[HandoffConnection]]): A dictionary mapping agent names to their handoff
-                connections.
+            handoffs (OrchestrationHandoffs): Defines the handoff connections between agents.
             name (str | None): The name of the orchestration.
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
@@ -373,7 +409,7 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         """Register the members with the runtime."""
 
         async def _register_helper(agent: Agent) -> None:
-            handoff_connections = self._handoffs.get(agent.name, [])
+            handoff_connections = self._handoffs.get(agent.name, AgentHandoffs())
             await HandoffAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
@@ -418,10 +454,10 @@ class HandoffOrchestration(OrchestrationBase[TIn, TOut]):
         for agent_name, connections in self._handoffs.items():
             if agent_name not in member_names:
                 raise ValueError(f"Agent {agent_name} is not a member of the handoff group.")
-            for connection in connections:
-                if connection.agent_name not in member_names:
-                    raise ValueError(f"Agent {connection.agent_name} is not a member of the handoff group.")
-                if connection.agent_name == agent_name:
+            for handoff_agent_name in connections:
+                if handoff_agent_name not in member_names:
+                    raise ValueError(f"Agent {handoff_agent_name} is not a member of the handoff group.")
+                if handoff_agent_name == agent_name:
                     raise ValueError(f"Agent {agent_name} cannot handoff to itself.")
 
 
