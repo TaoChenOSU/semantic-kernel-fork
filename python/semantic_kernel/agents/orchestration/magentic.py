@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.orchestration.agent_actor_base import ActorBase, AgentActorBase
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationBase, TIn, TOut
-from semantic_kernel.agents.orchestration.prompts._magentic_one_prompts import (
+from semantic_kernel.agents.orchestration.prompts._magentic_prompts import (
     ORCHESTRATOR_FINAL_ANSWER_PROMPT,
     ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
     ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
@@ -45,26 +45,26 @@ logger: logging.Logger = logging.getLogger(__name__)
 # region Messages and Types
 
 
-class MagenticOneStartMessage(KernelBaseModel):
-    """A message to start a magentic one group chat."""
+class MagenticStartMessage(KernelBaseModel):
+    """A message to start a magentic group chat."""
 
     body: ChatMessageContent
 
 
-class MagenticOneRequestMessage(KernelBaseModel):
-    """A request message type for agents in a magentic one group chat."""
+class MagenticRequestMessage(KernelBaseModel):
+    """A request message type for agents in a magentic group chat."""
 
     agent_name: str
 
 
-class MagenticOneResponseMessage(KernelBaseModel):
-    """A response message type from agents in a magentic one group chat."""
+class MagenticResponseMessage(KernelBaseModel):
+    """A response message type from agents in a magentic group chat."""
 
     body: ChatMessageContent
 
 
-class MagenticOneResetMessage(KernelBaseModel):
-    """A message to reset a participant's chat history in a magentic one group chat."""
+class MagenticResetMessage(KernelBaseModel):
+    """A message to reset a participant's chat history in a magentic group chat."""
 
     pass
 
@@ -88,11 +88,11 @@ class ProgressLedger(KernelBaseModel):
 
 # endregion Messages and Types
 
-# region MagenticOneManager
+# region MagenticManager
 
 
-class MagenticOneManager(KernelBaseModel):
-    """Container for the Magentic One pattern."""
+class MagenticManager(KernelBaseModel):
+    """Container for the Magentic pattern."""
 
     chat_completion_service: ChatCompletionClientBase
     prompt_execution_settings: PromptExecutionSettings
@@ -279,17 +279,17 @@ class MagenticOneManager(KernelBaseModel):
         return response
 
 
-# endregion MagenticOneManager
+# endregion MagenticManager
 
-# region MagenticOneManagerActor
+# region MagenticManagerActor
 
 
-class MagenticOneManagerActor(ActorBase):
+class MagenticManagerActor(ActorBase):
     """Actor for the Magentic One manager."""
 
     def __init__(
         self,
-        manager: MagenticOneManager,
+        manager: MagenticManager,
         internal_topic_type: str,
         participant_descriptions: dict[str, str],
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
@@ -297,7 +297,7 @@ class MagenticOneManagerActor(ActorBase):
         """Initialize the Magentic One manager actor.
 
         Args:
-            manager (MagenticOneManager): The Magentic One manager.
+            manager (MagenticManager): The Magentic One manager.
             internal_topic_type (str): The internal topic type.
             participant_descriptions (dict[str, str]): The participant descriptions.
             result_callback (Callable | None): A callback function to handle the final answer.
@@ -313,7 +313,7 @@ class MagenticOneManagerActor(ActorBase):
         super().__init__(description="Magentic One Manager")
 
     @message_handler
-    async def _handle_start_message(self, message: MagenticOneStartMessage, ctx: MessageContext) -> None:
+    async def _handle_start_message(self, message: MagenticStartMessage, ctx: MessageContext) -> None:
         """Handle the start message for the Magentic One manager."""
         logger.debug(f"{self.id}: Received Magentic One start message.")
         self._task = message.body
@@ -326,7 +326,7 @@ class MagenticOneManagerActor(ActorBase):
         await self._run_outer_loop(ctx.cancellation_token)
 
     @message_handler
-    async def _handle_response_message(self, message: MagenticOneResponseMessage, ctx: MessageContext) -> None:
+    async def _handle_response_message(self, message: MagenticResponseMessage, ctx: MessageContext) -> None:
         if message.body.role != AuthorRole.USER:
             self._chat_history.add_message(
                 ChatMessageContent(
@@ -362,7 +362,7 @@ class MagenticOneManagerActor(ActorBase):
 
         logger.debug(f"Initial task ledger:\n{task_ledger}")
         await self.publish_message(
-            MagenticOneResponseMessage(
+            MagenticResponseMessage(
                 body=self._chat_history.messages[-1],
             ),
             TopicId(self._internal_topic_type, self.id.key),
@@ -418,7 +418,7 @@ class MagenticOneManagerActor(ActorBase):
             )
         )
         await self.publish_message(
-            MagenticOneResponseMessage(
+            MagenticResponseMessage(
                 body=self._chat_history.messages[-1],
             ),
             TopicId(self._internal_topic_type, self.id.key),
@@ -433,14 +433,14 @@ class MagenticOneManagerActor(ActorBase):
         logger.debug(f"Magentic One manager selected agent: {next_speaker}")
 
         await self.publish_message(
-            MagenticOneRequestMessage(agent_name=next_speaker),
+            MagenticRequestMessage(agent_name=next_speaker),
             TopicId(self._internal_topic_type, self.id.key),
             cancellation_token=cancellation_token,
         )
 
     async def _reset_for_outer_loop(self, cancellation_token: CancellationToken) -> None:
         await self.publish_message(
-            MagenticOneResetMessage(),
+            MagenticResetMessage(),
             TopicId(self._internal_topic_type, self.id.key),
             cancellation_token=cancellation_token,
         )
@@ -457,16 +457,16 @@ class MagenticOneManagerActor(ActorBase):
             await self._result_callback(final_answer)
 
 
-# endregion MagenticOneManagerActor
+# endregion MagenticManagerActor
 
-# region MagenticOneAgentActor
+# region MagenticAgentActor
 
 
-class MagenticOneAgentActor(AgentActorBase):
+class MagenticAgentActor(AgentActorBase):
     """An agent actor that process messages in a Magentic One group chat."""
 
     @message_handler
-    async def _handle_response_message(self, message: MagenticOneResponseMessage, ctx: MessageContext) -> None:
+    async def _handle_response_message(self, message: MagenticResponseMessage, ctx: MessageContext) -> None:
         logger.debug(f"{self.id}: Received response message.")
         if self._agent_thread is not None:
             if message.body.role != AuthorRole.USER:
@@ -488,7 +488,7 @@ class MagenticOneAgentActor(AgentActorBase):
             self._chat_history.add_message(message.body)
 
     @message_handler
-    async def _handle_request_message(self, message: MagenticOneRequestMessage, ctx: MessageContext) -> None:
+    async def _handle_request_message(self, message: MagenticRequestMessage, ctx: MessageContext) -> None:
         if message.agent_name != self._agent.name:
             return
 
@@ -515,13 +515,13 @@ class MagenticOneAgentActor(AgentActorBase):
         await self._call_agent_response_callback(response_item.message)
 
         await self.publish_message(
-            MagenticOneResponseMessage(body=response_item.message),
+            MagenticResponseMessage(body=response_item.message),
             TopicId(self._internal_topic_type, self.id.key),
             cancellation_token=ctx.cancellation_token,
         )
 
     @message_handler
-    async def _handle_reset_message(self, message: MagenticOneResetMessage, ctx: MessageContext) -> None:
+    async def _handle_reset_message(self, message: MagenticResetMessage, ctx: MessageContext) -> None:
         """Handle the reset message for the Magentic One group chat."""
         logger.debug(f"{self.id}: Received reset message.")
         self._chat_history.clear()
@@ -530,18 +530,18 @@ class MagenticOneAgentActor(AgentActorBase):
             self._agent_thread = None
 
 
-# endregion MagenticOneAgentActor
+# endregion MagenticAgentActor
 
-# region MagenticOneOrchestration
+# region MagenticOrchestration
 
 
-class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
+class MagenticOrchestration(OrchestrationBase[TIn, TOut]):
     """The Magentic One pattern orchestration."""
 
     def __init__(
         self,
         members: list[Agent],
-        manager: MagenticOneManager,
+        manager: MagenticManager,
         name: str | None = None,
         description: str | None = None,
         input_transform: Callable[[TIn], Awaitable[DefaultTypeAlias] | DefaultTypeAlias] | None = None,
@@ -552,7 +552,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
 
         Args:
             members (list[Agent | OrchestrationBase]): A list of agents or orchestration bases.
-            manager (MagenticOneManager): The manager for the Magentic One pattern.
+            manager (MagenticManager): The manager for the Magentic One pattern.
             name (str | None): The name of the orchestration.
             description (str | None): The description of the orchestration.
             input_transform (Callable | None): A function that transforms the external input message.
@@ -598,7 +598,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         async def send_start_message(agent: Agent) -> None:
             target_actor_id = await runtime.get(self._get_agent_actor_type(agent, internal_topic_type))
             await runtime.send_message(
-                MagenticOneStartMessage(body=task),
+                MagenticStartMessage(body=task),
                 target_actor_id,
                 cancellation_token=cancellation_token,
             )
@@ -607,7 +607,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
 
         target_actor_id = await runtime.get(self._get_manager_actor_type(internal_topic_type))
         await runtime.send_message(
-            MagenticOneStartMessage(body=task),
+            MagenticStartMessage(body=task),
             target_actor_id,
             cancellation_token=cancellation_token,
         )
@@ -627,10 +627,10 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
     async def _register_members(self, runtime: CoreRuntime, internal_topic_type: str) -> None:
         """Register the agents."""
         await asyncio.gather(*[
-            MagenticOneAgentActor.register(
+            MagenticAgentActor.register(
                 runtime,
                 self._get_agent_actor_type(agent, internal_topic_type),
-                lambda agent=agent: MagenticOneAgentActor(  # type: ignore[misc]
+                lambda agent=agent: MagenticAgentActor(  # type: ignore[misc]
                     agent,
                     internal_topic_type,
                     self._agent_response_callback,
@@ -646,10 +646,10 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         result_callback: Callable[[DefaultTypeAlias], Awaitable[None]] | None = None,
     ) -> None:
         """Register the group chat manager."""
-        await MagenticOneManagerActor.register(
+        await MagenticManagerActor.register(
             runtime,
             self._get_manager_actor_type(internal_topic_type),
-            lambda: MagenticOneManagerActor(
+            lambda: MagenticManagerActor(
                 self._manager,
                 internal_topic_type=internal_topic_type,
                 participant_descriptions={agent.name: agent.description for agent in self._members},  # type: ignore[misc]
@@ -681,7 +681,7 @@ class MagenticOneOrchestration(OrchestrationBase[TIn, TOut]):
         The type is appended with the internal topic type to ensure uniqueness in the runtime
         that may be shared by multiple orchestrations.
         """
-        return f"{MagenticOneManagerActor.__name__}_{internal_topic_type}"
+        return f"{MagenticManagerActor.__name__}_{internal_topic_type}"
 
 
-# endregion MagenticOneOrchestration
+# endregion MagenticOrchestration

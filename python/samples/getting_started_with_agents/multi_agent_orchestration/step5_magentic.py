@@ -5,7 +5,7 @@ import asyncio
 from semantic_kernel.agents.agent import Agent
 from semantic_kernel.agents.chat_completion.chat_completion_agent import ChatCompletionAgent
 from semantic_kernel.agents.open_ai.open_ai_assistant_agent import OpenAIAssistantAgent
-from semantic_kernel.agents.orchestration.magentic_one import MagenticOneManager, MagenticOneOrchestration
+from semantic_kernel.agents.orchestration.magentic import MagenticManager, MagenticOrchestration
 from semantic_kernel.agents.runtime.in_process.in_process_runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_prompt_execution_settings import (
     OpenAIPromptExecutionSettings,
@@ -14,23 +14,23 @@ from semantic_kernel.connectors.ai.open_ai.services.open_ai_chat_completion impo
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 
 """
-The following sample demonstrates how to create a MagenticOne orchestration with two agents:
+The following sample demonstrates how to create a Magentic orchestration with two agents:
 - A Research agent that can perform web searches
 - A Coder agent that can run code using the code interpreter
 
-Read more about MagenticOne here:
+Read more about Magentic here:
 https://www.microsoft.com/en-us/research/articles/magentic-one-a-generalist-multi-agent-system-for-solving-complex-tasks/
 
 This sample demonstrates the basic steps of creating and starting a runtime, creating
-a MagenticOne orchestration with two agents and a MagenticOne manager, invoking the
+a Magentic orchestration with two agents and a Magentic manager, invoking the
 orchestration, and finally waiting for the results.
 
-The MagenticOne manager requires a chat completion model that supports structured output.
+The Magentic manager requires a chat completion model that supports structured output.
 """
 
 
 async def agents() -> list[Agent]:
-    """Return a list of agents that will participate in the MagenticOne orchestration.
+    """Return a list of agents that will participate in the Magentic orchestration.
 
     Feel free to add or remove agents.
     """
@@ -67,11 +67,11 @@ def agent_response_callback(message: ChatMessageContent) -> None:
 
 async def main():
     """Main function to run the agents."""
-    # 1. Create a MagenticOne orchestration with two agents and a MagenticOne manager
-    # Note, the MagenticOne manager accepts custom prompts for advanced users and scenarios.
-    magentic_one_orchestration = MagenticOneOrchestration(
+    # 1. Create a Magentic orchestration with two agents and a Magentic manager
+    # Note, the Magentic manager accepts custom prompts for advanced users and scenarios.
+    magentic_orchestration = MagenticOrchestration(
         members=await agents(),
-        manager=MagenticOneManager(
+        manager=MagenticManager(
             chat_completion_service=OpenAIChatCompletion(),
             prompt_execution_settings=OpenAIPromptExecutionSettings(),
         ),
@@ -83,7 +83,7 @@ async def main():
     runtime.start()
 
     # 3. Invoke the orchestration with a task and the runtime
-    orchestration_result = await magentic_one_orchestration.invoke(
+    orchestration_result = await magentic_orchestration.invoke(
         task=(
             "What are the 50 tallest buildings in the world? Create a table with their names"
             " and heights grouped by country with a column of the average height of the buildings"

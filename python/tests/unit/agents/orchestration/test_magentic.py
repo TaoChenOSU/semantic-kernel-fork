@@ -5,14 +5,14 @@ from uuid import uuid4
 
 import pytest
 
-from semantic_kernel.agents.orchestration.magentic_one import (
-    MagenticOneManager,
-    MagenticOneOrchestration,
+from semantic_kernel.agents.orchestration.magentic import (
+    MagenticManager,
+    MagenticOrchestration,
     ProgressLedger,
     ProgressLedgerItem,
 )
 from semantic_kernel.agents.orchestration.orchestration_base import DefaultTypeAlias, OrchestrationResult
-from semantic_kernel.agents.orchestration.prompts._magentic_one_prompts import (
+from semantic_kernel.agents.orchestration.prompts._magentic_prompts import (
     ORCHESTRATOR_FINAL_ANSWER_PROMPT,
     ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
     ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
@@ -36,18 +36,18 @@ class MockChatCompletionService(ChatCompletionClientBase):
     pass
 
 
-# region MagenticOneOrchestration
+# region MagenticOrchestration
 
 
 async def test_init_member_without_description_throws():
-    """Test the prepare method of the MagenticOneOrchestration with a member without description."""
+    """Test the prepare method of the MagenticOrchestration with a member without description."""
     agent_a = MockAgent()
     agent_b = MockAgent()
 
     with pytest.raises(ValueError):
-        MagenticOneOrchestration(
+        MagenticOrchestration(
             members=[agent_a, agent_b],
-            manager=MagenticOneManager(
+            manager=MagenticManager(
                 chat_completion_service=MockChatCompletionService(ai_model_id="test"),
                 prompt_execution_settings=PromptExecutionSettings(),
             ),
@@ -55,22 +55,22 @@ async def test_init_member_without_description_throws():
 
 
 async def test_prepare():
-    """Test the prepare method of the MagenticOneOrchestration."""
+    """Test the prepare method of the MagenticOrchestration."""
     agent_a = MockAgent(description="test agent")
     agent_b = MockAgent(description="test agent")
 
     runtime = MockRuntime()
 
-    package_path = "semantic_kernel.agents.orchestration.magentic_one"
+    package_path = "semantic_kernel.agents.orchestration.magentic"
     with (
-        patch(f"{package_path}.MagenticOneOrchestration._start"),
-        patch(f"{package_path}.MagenticOneAgentActor.register") as mock_agent_actor_register,
-        patch(f"{package_path}.MagenticOneManagerActor.register") as mock_manager_actor_register,
+        patch(f"{package_path}.MagenticOrchestration._start"),
+        patch(f"{package_path}.MagenticAgentActor.register") as mock_agent_actor_register,
+        patch(f"{package_path}.MagenticManagerActor.register") as mock_manager_actor_register,
         patch.object(runtime, "add_subscription") as mock_add_subscription,
     ):
-        orchestration = MagenticOneOrchestration(
+        orchestration = MagenticOrchestration(
             members=[agent_a, agent_b],
-            manager=MagenticOneManager(
+            manager=MagenticManager(
                 chat_completion_service=MockChatCompletionService(ai_model_id="test"),
                 prompt_execution_settings=PromptExecutionSettings(),
             ),
@@ -156,21 +156,21 @@ ManagerProgressListUnknownSpeaker = [
 
 
 async def test_invoke():
-    """Test the invoke method of the MagenticOneOrchestration."""
+    """Test the invoke method of the MagenticOrchestration."""
     with (
         patch.object(MockAgent, "get_response", wraps=MockAgent.get_response, autospec=True) as mock_get_response,
         patch.object(
             MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
         ) as mock_get_chat_message_content,
         patch.object(
-            MagenticOneManager, "create_progress_ledger", new_callable=AsyncMock, side_effect=ManagerProgressList
+            MagenticManager, "create_progress_ledger", new_callable=AsyncMock, side_effect=ManagerProgressList
         ),
     ):
         mock_get_chat_message_content.return_value = ChatMessageContent(role="assistant", content="mock_response")
         chat_completion_service = MockChatCompletionService(ai_model_id="test")
         prompt_execution_settings = PromptExecutionSettings()
 
-        manager = MagenticOneManager(
+        manager = MagenticManager(
             chat_completion_service=chat_completion_service,
             prompt_execution_settings=prompt_execution_settings,
         )
@@ -182,7 +182,7 @@ async def test_invoke():
         runtime.start()
 
         try:
-            orchestration = MagenticOneOrchestration(members=[agent_a, agent_b], manager=manager)
+            orchestration = MagenticOrchestration(members=[agent_a, agent_b], manager=manager)
             orchestration_result = await orchestration.invoke(task="test_message", runtime=runtime)
             result = await orchestration_result.get()
         finally:
@@ -198,11 +198,11 @@ async def test_invoke():
 
 
 async def test_invoke_with_list_error():
-    """Test the invoke method of the MagenticOneOrchestration with a list of messages which raises an error."""
+    """Test the invoke method of the MagenticOrchestration with a list of messages which raises an error."""
     chat_completion_service = MockChatCompletionService(ai_model_id="test")
     prompt_execution_settings = PromptExecutionSettings()
 
-    manager = MagenticOneManager(
+    manager = MagenticManager(
         chat_completion_service=chat_completion_service,
         prompt_execution_settings=prompt_execution_settings,
     )
@@ -217,20 +217,20 @@ async def test_invoke_with_list_error():
 
     runtime = MockRuntime()
 
-    package_path = "semantic_kernel.agents.orchestration.magentic_one"
+    package_path = "semantic_kernel.agents.orchestration.magentic"
     with (
-        patch(f"{package_path}.MagenticOneAgentActor.register"),
-        patch(f"{package_path}.MagenticOneManagerActor.register"),
+        patch(f"{package_path}.MagenticAgentActor.register"),
+        patch(f"{package_path}.MagenticManagerActor.register"),
         patch.object(runtime, "add_subscription"),
         pytest.raises(ValueError),
     ):
-        orchestration = MagenticOneOrchestration(members=[agent_a, agent_b], manager=manager)
+        orchestration = MagenticOrchestration(members=[agent_a, agent_b], manager=manager)
         orchestration_result = await orchestration.invoke(task=messages, runtime=runtime)
         await orchestration_result.get()
 
 
 async def test_invoke_with_response_callback():
-    """Test the invoke method of the MagenticOneOrchestration with a response callback."""
+    """Test the invoke method of the MagenticOrchestration with a response callback."""
 
     runtime = InProcessRuntime()
     runtime.start()
@@ -242,7 +242,7 @@ async def test_invoke_with_response_callback():
             MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
         ) as mock_get_chat_message_content,
         patch.object(
-            MagenticOneManager, "create_progress_ledger", new_callable=AsyncMock, side_effect=ManagerProgressList
+            MagenticManager, "create_progress_ledger", new_callable=AsyncMock, side_effect=ManagerProgressList
         ),
     ):
         mock_get_chat_message_content.return_value = ChatMessageContent(role="assistant", content="mock_response")
@@ -251,9 +251,9 @@ async def test_invoke_with_response_callback():
         agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
-            orchestration = MagenticOneOrchestration(
+            orchestration = MagenticOrchestration(
                 members=[agent_a, agent_b],
-                manager=MagenticOneManager(
+                manager=MagenticManager(
                     chat_completion_service=MockChatCompletionService(ai_model_id="test"),
                     prompt_execution_settings=PromptExecutionSettings(),
                 ),
@@ -270,7 +270,7 @@ async def test_invoke_with_response_callback():
 
 
 async def test_invoke_with_max_stall_count_exceeded():
-    """ "Test the invoke method of the MagenticOneOrchestration with max stall count exceeded."""
+    """ "Test the invoke method of the MagenticOrchestration with max stall count exceeded."""
     runtime = InProcessRuntime()
     runtime.start()
 
@@ -280,7 +280,7 @@ async def test_invoke_with_max_stall_count_exceeded():
             MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
         ) as mock_get_chat_message_content,
         patch.object(
-            MagenticOneManager,
+            MagenticManager,
             "create_progress_ledger",
             new_callable=AsyncMock,
             side_effect=ManagerProgressListStalling,
@@ -292,9 +292,9 @@ async def test_invoke_with_max_stall_count_exceeded():
         agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
-            orchestration = MagenticOneOrchestration(
+            orchestration = MagenticOrchestration(
                 members=[agent_a, agent_b],
-                manager=MagenticOneManager(
+                manager=MagenticManager(
                     chat_completion_service=MockChatCompletionService(ai_model_id="test"),
                     prompt_execution_settings=PromptExecutionSettings(),
                     max_stall_count=1,
@@ -312,7 +312,7 @@ async def test_invoke_with_max_stall_count_exceeded():
 
 
 async def test_invoke_with_unknown_speaker():
-    """Test the invoke method of the MagenticOneOrchestration with an unknown speaker."""
+    """Test the invoke method of the MagenticOrchestration with an unknown speaker."""
     runtime = InProcessRuntime()
     runtime.start()
 
@@ -322,7 +322,7 @@ async def test_invoke_with_unknown_speaker():
             MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
         ) as mock_get_chat_message_content,
         patch.object(
-            MagenticOneManager,
+            MagenticManager,
             "create_progress_ledger",
             new_callable=AsyncMock,
             side_effect=ManagerProgressListUnknownSpeaker,
@@ -335,9 +335,9 @@ async def test_invoke_with_unknown_speaker():
         agent_b = MockAgent(name="agent_b", description="test agent")
 
         try:
-            orchestration = MagenticOneOrchestration(
+            orchestration = MagenticOrchestration(
                 members=[agent_a, agent_b],
-                manager=MagenticOneManager(
+                manager=MagenticManager(
                     chat_completion_service=MockChatCompletionService(ai_model_id="test"),
                     prompt_execution_settings=PromptExecutionSettings(),
                 ),
@@ -348,17 +348,17 @@ async def test_invoke_with_unknown_speaker():
             await runtime.stop_when_idle()
 
 
-# endregion MagenticOneOrchestration
+# endregion MagenticOrchestration
 
-# region MagenticOneManager
+# region MagenticManager
 
 
-def test_magentic_one_manager_init():
-    """Test the initialization of the MagenticOneManager."""
+def test_magentic_manager_init():
+    """Test the initialization of the MagenticManager."""
     chat_completion_service = MockChatCompletionService(ai_model_id="test")
     prompt_execution_settings = PromptExecutionSettings()
 
-    manager = MagenticOneManager(
+    manager = MagenticManager(
         chat_completion_service=chat_completion_service,
         prompt_execution_settings=prompt_execution_settings,
     )
@@ -391,12 +391,12 @@ def test_magentic_one_manager_init():
     assert manager.final_answer_prompt is not None and manager.final_answer_prompt == ORCHESTRATOR_FINAL_ANSWER_PROMPT
 
 
-def test_magentic_one_manager_init_with_custom_prompts():
-    """Test the initialization of the MagenticOneManager with custom prompts."""
+def test_magentic_manager_init_with_custom_prompts():
+    """Test the initialization of the MagenticManager with custom prompts."""
     chat_completion_service = MockChatCompletionService(ai_model_id="test")
     prompt_execution_settings = PromptExecutionSettings()
 
-    manager = MagenticOneManager(
+    manager = MagenticManager(
         chat_completion_service=chat_completion_service,
         prompt_execution_settings=prompt_execution_settings,
         task_ledger_facts_prompt="custom_task_ledger_facts_prompt",
@@ -417,8 +417,8 @@ def test_magentic_one_manager_init_with_custom_prompts():
     assert manager.final_answer_prompt == "custom_final_answer_prompt"
 
 
-async def test_magentic_one_manager_create_facts_and_prompt():
-    """Test the create_facts_and_prompt method of the MagenticOneManager."""
+async def test_magentic_manager_create_facts_and_prompt():
+    """Test the create_facts_and_prompt method of the MagenticManager."""
 
     with patch.object(
         MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
@@ -427,7 +427,7 @@ async def test_magentic_one_manager_create_facts_and_prompt():
         chat_completion_service = MockChatCompletionService(ai_model_id="test")
         prompt_execution_settings = PromptExecutionSettings()
 
-        manager = MagenticOneManager(
+        manager = MagenticManager(
             chat_completion_service=chat_completion_service,
             prompt_execution_settings=prompt_execution_settings,
             task_ledger_facts_prompt="custom_task_ledger_facts_prompt",
@@ -454,8 +454,8 @@ async def test_magentic_one_manager_create_facts_and_prompt():
         )
 
 
-async def test_magentic_one_manager_create_facts_and_prompt_with_old_facts():
-    """Test the create_facts_and_prompt method of the MagenticOneManager with old facts."""
+async def test_magentic_manager_create_facts_and_prompt_with_old_facts():
+    """Test the create_facts_and_prompt method of the MagenticManager with old facts."""
 
     with patch.object(
         MockChatCompletionService, "get_chat_message_content", new_callable=AsyncMock
@@ -465,7 +465,7 @@ async def test_magentic_one_manager_create_facts_and_prompt_with_old_facts():
         chat_completion_service = MockChatCompletionService(ai_model_id="test")
         prompt_execution_settings = PromptExecutionSettings()
 
-        manager = MagenticOneManager(
+        manager = MagenticManager(
             chat_completion_service=chat_completion_service,
             prompt_execution_settings=prompt_execution_settings,
             task_ledger_facts_update_prompt="custom_task_ledger_facts_prompt {{$old_facts}}",
@@ -493,13 +493,13 @@ async def test_magentic_one_manager_create_facts_and_prompt_with_old_facts():
         )
 
 
-async def test_magentic_one_manager_create_task_ledger():
-    """Test the create_task_ledger method of the MagenticOneManager."""
+async def test_magentic_manager_create_task_ledger():
+    """Test the create_task_ledger method of the MagenticManager."""
 
     chat_completion_service = MockChatCompletionService(ai_model_id="test")
     prompt_execution_settings = PromptExecutionSettings()
 
-    manager = MagenticOneManager(
+    manager = MagenticManager(
         chat_completion_service=chat_completion_service,
         prompt_execution_settings=prompt_execution_settings,
     )
@@ -517,8 +517,8 @@ async def test_magentic_one_manager_create_task_ledger():
     assert "{'agent_a': 'test_agent_a', 'agent_b': 'test_agent_b'}" in task_ledger
 
 
-async def test_magentic_one_manager_create_progress_ledger():
-    """Test the create_progress_ledger method of the MagenticOneManager."""
+async def test_magentic_manager_create_progress_ledger():
+    """Test the create_progress_ledger method of the MagenticManager."""
 
     mock_progress_ledger = ProgressLedger(
         is_request_satisfied=ProgressLedgerItem(answer=False, reason="mock_reasoning"),
@@ -541,7 +541,7 @@ async def test_magentic_one_manager_create_progress_ledger():
         chat_completion_service = MockChatCompletionService(ai_model_id="test")
         prompt_execution_settings = PromptExecutionSettings()
 
-        manager = MagenticOneManager(
+        manager = MagenticManager(
             chat_completion_service=chat_completion_service,
             prompt_execution_settings=prompt_execution_settings,
         )
@@ -562,4 +562,4 @@ async def test_magentic_one_manager_create_progress_ledger():
         assert mock_get_chat_message_content.call_args_list[0][0][1].extension_data["response_format"] == ProgressLedger
 
 
-# endregion MagenticOneManager
+# endregion MagenticManager
