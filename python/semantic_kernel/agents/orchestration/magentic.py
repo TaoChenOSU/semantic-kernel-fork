@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
 from semantic_kernel.agents.agent import Agent
@@ -91,7 +92,86 @@ class ProgressLedger(KernelBaseModel):
 # region MagenticManager
 
 
-class MagenticManager(KernelBaseModel):
+class MagenticManager(KernelBaseModel, ABC):
+    """Base class for the Magentic One manager."""
+
+    @abstractmethod
+    async def create_facts_and_plan(
+        self,
+        chat_history: ChatHistory,
+        task: ChatMessageContent,
+        participant_descriptions: dict[str, str],
+        old_facts: ChatMessageContent | None = None,
+    ) -> tuple[ChatMessageContent, ChatMessageContent]:
+        """Create facts and plan for the task.
+
+        Args:
+            chat_history (ChatHistory): The chat history. This chat history will be modified by the function.
+            task (ChatMessageContent): The task.
+            participant_descriptions (dict[str, str]): The participant descriptions.
+            old_facts (ChatMessageContent | None): The old facts. If provided, the facts and plan update
+                prompts will be used.
+
+        Returns:
+            tuple[ChatMessageContent, ChatMessageContent]: The facts and plan.
+        """
+        ...
+
+    @abstractmethod
+    async def create_task_ledger(
+        self,
+        task: ChatMessageContent,
+        facts: ChatMessageContent,
+        plan: ChatMessageContent,
+        participant_descriptions: dict[str, str],
+    ) -> str:
+        """Create a task ledger.
+
+        Args:
+            task (ChatMessageContent): The task.
+            facts (ChatMessageContent): The facts.
+            plan (ChatMessageContent): The plan.
+            participant_descriptions (dict[str, str]): The participant descriptions.
+
+        Returns:
+            str: The task ledger.
+        """
+        ...
+
+    @abstractmethod
+    async def create_progress_ledger(
+        self,
+        chat_history: ChatHistory,
+        task: ChatMessageContent,
+        participant_descriptions: dict[str, str],
+    ) -> ProgressLedger:
+        """Create a progress ledger.
+
+        Args:
+            chat_history (ChatHistory): The chat history. This chat history will be modified by the function.
+            task (ChatMessageContent): The task.
+            participant_descriptions (dict[str, str]): The participant descriptions.
+
+        Returns:
+            ProgressLedger: The progress ledger.
+        """
+        ...
+
+    @abstractmethod
+    async def prepare_final_answer(self, chat_history: ChatHistory, task: ChatMessageContent) -> ChatMessageContent:
+        """Prepare the final answer.
+
+        Args:
+            chat_history (ChatHistory): The chat history. This chat history will be modified by the function.
+            task (ChatMessageContent): The task.
+
+        Returns:
+            ChatMessageContent: The final answer.
+        """
+        ...
+
+
+class StandardMagenticManager(MagenticManager):
     """Container for the Magentic pattern."""
 
     chat_completion_service: ChatCompletionClientBase
@@ -107,6 +187,7 @@ class MagenticManager(KernelBaseModel):
     progress_ledger_prompt: str = ORCHESTRATOR_PROGRESS_LEDGER_PROMPT
     final_answer_prompt: str = ORCHESTRATOR_FINAL_ANSWER_PROMPT
 
+    @override
     async def create_facts_and_plan(
         self,
         chat_history: ChatHistory,
@@ -173,6 +254,7 @@ class MagenticManager(KernelBaseModel):
 
         return facts, plan
 
+    @override
     async def create_task_ledger(
         self,
         task: ChatMessageContent,
@@ -205,6 +287,7 @@ class MagenticManager(KernelBaseModel):
             ),
         )
 
+    @override
     async def create_progress_ledger(
         self,
         chat_history: ChatHistory,
@@ -250,6 +333,7 @@ class MagenticManager(KernelBaseModel):
 
         return ProgressLedger.model_validate_json(response.content)
 
+    @override
     async def prepare_final_answer(self, chat_history: ChatHistory, task: ChatMessageContent) -> ChatMessageContent:
         """Prepare the final answer.
 
